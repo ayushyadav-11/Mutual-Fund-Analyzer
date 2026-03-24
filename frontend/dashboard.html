@@ -1,0 +1,1919 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MF Analyzer — Dashboard</title>
+    <meta name="description"
+        content="Portfolio analytics dashboard with XIRR, risk metrics, asset allocation and transaction history." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <p>Loading your portfolio…</p>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">
+            <div class="logo-icon">📊</div>
+            <span>MF Analyzer</span>
+        </a>
+        <ul class="navbar-nav">
+            <li><a href="/">Upload</a></li>
+            <li><a href="/dashboard" class="active">Dashboard</a></li>
+        </ul>
+    </nav>
+
+    <main class="page">
+        <div class="dashboard" id="dashboard-root" style="opacity:0;">
+
+            <!-- Investor Info Bar -->
+            <div class="card investor-bar fade-in" id="investor-bar">
+                <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
+                    <div class="investor-name" id="investor-name">—</div>
+                    <div id="family-badge" style="display: none; background: var(--accent); color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold;">👨‍👩‍👧‍👦 Family View</div>
+                    <div class="period-tag" id="period-tag"></div>
+                </div>
+                <div class="actions">
+                    <a href="/" class="btn btn-outline" style="padding:8px 18px;font-size:0.85rem;">⬆️ New Upload</a>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="overview">📈 Overview</button>
+                <button class="tab-btn" data-tab="holdings">💼 Holdings</button>
+                <button class="tab-btn" data-tab="risk">🛡️ Risk</button>
+                <button class="tab-btn" data-tab="overlap">🔗 Overlap</button>
+                <button class="tab-btn" data-tab="planner">🎯 Planner & Tax</button>
+                <button class="tab-btn" data-tab="projections">🚀 Projections</button>
+                <button class="tab-btn" data-tab="manage">⚙️ Mgmt & Cashflow</button>
+                <button class="tab-btn" data-tab="transactions">📋 Transactions</button>
+                <button class="tab-btn" data-tab="funds">🔍 Funds</button>
+            </div>
+
+            <!-- ═════════════════════════ TAB: FUNDS BROWSER ════════════════════════ -->
+            <div class="tab-panel" id="tab-funds">
+                <div class="card" style="padding:24px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                        <div>
+                            <h2 style="font-size:1.3rem;font-weight:800;margin:0;">🔍 Fund Browser</h2>
+                            <p style="color:var(--text-secondary);font-size:0.85rem;margin:4px 0 0;">Active funds only &middot; Click a card for full deep-dive analytics</p>
+                        </div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                            <input id="funds-search" type="text" placeholder="Search fund name…" oninput="filterFundCards()"
+                                style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;width:220px;outline:none;"/>
+                            <select id="funds-category-filter" onchange="filterFundCards()"
+                                style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;outline:none;">
+                                <option value="">All Categories</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="funds-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;"></div>
+                    <div id="funds-empty" class="empty-state" style="display:none;">No active funds match your filter.</div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: OVERVIEW ═══════════════════════════ -->
+            <div class="tab-panel active" id="tab-overview">
+
+                <!-- Summary Cards -->
+                <div class="summary-grid fade-in">
+                    <div class="card summary-card invested">
+                        <div class="label">Total Invested</div>
+                        <div class="value-main text-info num" id="s-invested">—</div>
+                        <div class="value-sub" id="s-funds">— funds</div>
+                        <div class="icon-badge">💰</div>
+                    </div>
+                    <div class="card summary-card value">
+                        <div class="label">Current Value</div>
+                        <div class="value-main text-accent num" id="s-value">—</div>
+                        <div class="value-sub" id="s-gain-abs">—</div>
+                        <div class="icon-badge">📊</div>
+                    </div>
+                    <div class="card summary-card gain">
+                        <div class="label">Absolute Return</div>
+                        <div class="value-main num" id="s-abs-return">—</div>
+                        <div class="value-sub">Total P&amp;L on invested capital</div>
+                        <div class="icon-badge">📉</div>
+                    </div>
+                    <div class="card summary-card xirr">
+                        <div class="label">XIRR</div>
+                        <div class="value-main text-warning num" id="s-xirr">—</div>
+                        <div class="value-sub">Annualised return (IRR)</div>
+                        <div class="icon-badge">⚡</div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="charts-grid fade-in">
+                    <div class="card chart-card">
+                        <div class="section-header">
+                            <div class="section-title">Asset Allocation</div>
+                        </div>
+                        <canvas id="alloc-chart"></canvas>
+                        <div id="alloc-legend" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="section-header">
+                            <div class="section-title">Investment Timeline</div>
+                        </div>
+                        <canvas id="growth-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Top Holdings preview -->
+                <div class="card holdings-card fade-in">
+                    <div class="section-header">
+                        <div class="section-title">Top Holdings</div>
+                        <button type="button" class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;"
+                            onclick="switchTab('holdings'); return false;">View All →</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="data-table" id="top-holdings-table">
+                            <thead>
+                                <tr>
+                                    <th>Fund</th>
+                                    <th>Units</th>
+                                    <th>Avg NAV</th>
+                                    <th>Current NAV</th>
+                                    <th>Invested</th>
+                                    <th>Current Value</th>
+                                    <th>Gain (₹)</th>
+                                    <th>Gain %</th>
+                                    <th>XIRR</th>
+                                </tr>
+                            </thead>
+                            <tbody id="top-holdings-body">
+                                <tr>
+                                    <td colspan="9">
+                                        <div class="empty-state">
+                                            <div class="icon">⏳</div>
+                                            <p>Loading…</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: HOLDINGS ═══════════════════════════ -->
+            <div class="tab-panel" id="tab-holdings">
+                <div class="card holdings-card fade-in">
+                    <div class="section-header">
+                        <div class="section-title">All Holdings</div>
+                        <span style="font-size:0.82rem;color:var(--text-muted);" id="holdings-count"></span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="data-table" id="holdings-table">
+                            <thead>
+                                <tr>
+                                    <th onclick="sortTable('holdings-table-body', 0)">Fund ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 1)">Units ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 2)">Avg NAV ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 3)">Current NAV ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 4)">Invested ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 5)">Value ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 6)">Gain ₹ ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 7)">Gain % ↕</th>
+                                    <th onclick="sortTable('holdings-table-body', 8)">XIRR ↕</th>
+                                </tr>
+                            </thead>
+                            <tbody id="holdings-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: RISK ═══════════════════════════════ -->
+            <div class="tab-panel" id="tab-risk">
+
+                <!-- Portfolio-level risk cards -->
+                <div class="section-header fade-in" style="margin-bottom:16px;">
+                    <div class="section-title">Portfolio Risk Metrics</div>
+                    <span style="font-size:0.78rem;color:var(--text-muted);">Based on 3 years of NAV data · 6.5%
+                        risk-free rate</span>
+                </div>
+
+                <div class="risk-grid fade-in" id="portfolio-risk-cards">
+                    <div class="card risk-metric-card">
+                        <div class="metric-label">Volatility</div>
+                        <div class="metric-val text-warning" id="r-volatility">—</div>
+                        <div class="metric-sub">Annualised std dev</div>
+                        <div class="risk-gauge">
+                            <div class="risk-gauge-fill" id="g-volatility" style="background:var(--warning);width:0%">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card risk-metric-card">
+                        <div class="metric-label">Sharpe Ratio</div>
+                        <div class="metric-val" id="r-sharpe">—</div>
+                        <div class="metric-sub">Return per unit risk</div>
+                        <div class="risk-gauge">
+                            <div class="risk-gauge-fill" id="g-sharpe" style="background:var(--success);width:0%"></div>
+                        </div>
+                    </div>
+                    <div class="card risk-metric-card">
+                        <div class="metric-label">Sortino Ratio</div>
+                        <div class="metric-val" id="r-sortino">—</div>
+                        <div class="metric-sub">Downside-adjusted return</div>
+                        <div class="risk-gauge">
+                            <div class="risk-gauge-fill" id="g-sortino" style="background:var(--accent);width:0%"></div>
+                        </div>
+                    </div>
+                    <div class="card risk-metric-card">
+                        <div class="metric-label">Max Drawdown</div>
+                        <div class="metric-val text-danger" id="r-drawdown">—</div>
+                        <div class="metric-sub">Worst peak-to-trough</div>
+                        <div class="risk-gauge">
+                            <div class="risk-gauge-fill" id="g-drawdown" style="background:var(--danger);width:0%">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card risk-metric-card">
+                        <div class="metric-label">Beta vs Nifty 50</div>
+                        <div class="metric-val text-info" id="r-beta">—</div>
+                        <div class="metric-sub">Portfolio market sensitivity</div>
+                        <div class="risk-gauge">
+                            <div class="risk-gauge-fill" id="g-beta" style="background:var(--info);width:0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Per-fund risk table -->
+                <div class="card fade-in" style="padding:24px;margin-top:20px;">
+                    <div class="section-header">
+                        <div class="section-title">Per-Fund Risk Analysis</div>
+                        <span style="font-size:0.78rem;color:var(--text-muted);">Beta uses sector-specific benchmark per
+                            fund category</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="risk-fund-table" id="risk-fund-table">
+                            <thead>
+                                <tr>
+                                    <th>Fund</th>
+                                    <th>Category</th>
+                                    <th>Beta Benchmark</th>
+                                    <th>Beta <span class="th-badge">Defensive/Neutral/Aggressive</span></th>
+                                    <th>Volatility % <span class="th-badge">Low/Moderate/High</span></th>
+                                    <th>Sharpe <span class="th-badge">Excellent→Poor</span></th>
+                                    <th>Sortino <span class="th-badge">Excellent→Poor</span></th>
+                                    <th>Max DD% <span class="th-badge">Mild/Moderate/Severe</span></th>
+                                    <th>Peer Rank</th>
+                                </tr>
+                            </thead>
+                            <tbody id="risk-fund-body">
+                                <tr>
+                                    <td colspan="8">
+                                        <div class="empty-state">
+                                            <div class="icon">⏳</div>
+                                            <p>Computing risk metrics…</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Risk interpretation guide -->
+                <div class="card fade-in" style="padding:24px;margin-top:20px;">
+                    <div class="section-title" style="margin-bottom:16px;">🧭 How to Read These Metrics</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;font-size:0.85rem;color:var(--text-secondary);">
+                        <div><strong style="color:var(--text-primary);">📊 Volatility</strong><br />How wildly the NAV swings. Rated vs your fund's peer category — so a 25% volatility is <em>Low</em> for Small Cap but <em>High</em> for Large Cap.</div>
+                        <div><strong style="color:var(--text-primary);">⚡ Sharpe Ratio</strong><br />Return you earned <em>per unit of risk</em>. A rating of <span class="rating-badge-good">Good</span> means your reward fairly compensates the risk taken vs the risk-free rate (6.5% RBI).</div>
+                        <div><strong style="color:var(--text-primary);">🛡️ Sortino Ratio</strong><br />Like Sharpe, but only punishes <em>downside</em> moves. Better suited for volatile equity funds — a high Sortino means you lose money rarely.</div>
+                        <div><strong style="color:var(--text-primary);">📉 Max Drawdown</strong><br />The worst peak-to-trough loss in 3 years. <span class="rating-badge-mild">Mild</span> = survived market crashes well. <span class="rating-badge-severe">Severe</span> = significant losses during downturns.</div>
+                        <div><strong style="color:var(--text-primary);">📡 Beta</strong><br />Sensitivity to the <em>correct</em> benchmark (not always Nifty 50 — Banking funds use Nifty Bank, etc.). <span class="rating-badge-def">Defensive</span> &lt;1 means less market sensitivity.</div>
+                        <div><strong style="color:var(--text-primary);">🏅 Peer Rank</strong><br />How your fund compares to <em>other funds in your own portfolio</em> of the same type. <strong>#1</strong> = best risk-adjusted return (Sharpe) among similar funds you hold.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: OVERLAP ══════════════════════════════ -->
+            <div class="tab-panel" id="tab-overlap">
+                <div class="card fade-in" style="padding:24px;">
+                    <div class="section-header">
+                        <div class="section-title">🔗 Portfolio Overlap Analysis</div>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <span id="overlap-data-month" style="font-size:0.78rem;color:var(--text-muted);"></span>
+                            <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;" onclick="loadOverlap(true)" id="overlap-refresh-btn">🔄 Refresh Data</button>
+                        </div>
+                    </div>
+                    <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
+                        Fetches monthly portfolio disclosures from AMC websites and computes how much stock-level overlap exists between your equity funds.
+                        A high overlap % means two funds are investing in the same stocks — reducing the benefit of diversification.
+                    </p>
+
+                    <div id="overlap-loading" style="display:none;text-align:center;padding:40px 0;">
+                        <div class="spinner" style="margin:0 auto 16px;"></div>
+                        <p style="color:var(--text-muted);font-size:0.9rem;">Downloading AMC portfolio files… this may take 15–30 seconds.</p>
+                    </div>
+
+                    <div id="overlap-content" style="display:none;">
+                        <!-- Fund status badges -->
+                        <div id="overlap-fund-status" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;"></div>
+
+                        <!-- Heatmap Matrix -->
+                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">Pairwise Overlap Matrix</div>
+                        <div style="overflow-x:auto;margin-bottom:28px;">
+                            <table id="overlap-matrix" style="border-collapse:separate;border-spacing:3px;min-width:300px;"></table>
+                        </div>
+
+                        <!-- Top overlapping pairs -->
+                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">⚠️ Top Overlapping Pairs</div>
+                        <div id="overlap-pairs" style="display:grid;gap:14px;margin-bottom:28px;"></div>
+
+                        <!-- Multi-fund stocks -->
+                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">🔁 Stocks Held by Multiple Funds</div>
+                        <div id="overlap-stocks" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+                    </div>
+
+                    <div id="overlap-empty" style="text-align:center;padding:50px 0;">
+                        <div style="font-size:2.5rem;margin-bottom:12px;">🔗</div>
+                        <p style="color:var(--text-secondary);margin-bottom:16px;">Click below to analyse overlap between your equity funds using AMC monthly portfolio disclosures.</p>
+                        <button class="btn btn-primary" onclick="loadOverlap(false)" style="font-size:0.9rem;padding:10px 24px;">Analyse Portfolio Overlap</button>
+                    </div>
+
+                    <div id="overlap-error" style="display:none;text-align:center;padding:30px 0;">
+                        <div style="font-size:2rem;margin-bottom:8px;">⚠️</div>
+                        <p id="overlap-error-msg" style="color:var(--text-muted);"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: PLANNER & TAX ═══════════════════════ -->
+            <div class="tab-panel" id="tab-planner">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
+                    
+                    <!-- Goal Planner -->
+                    <div class="card fade-in" style="padding:24px;">
+                        <div class="section-header">
+                            <div class="section-title">🎯 Goal-Based SIP Planner</div>
+                        </div>
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
+                            Estimate the monthly SIP required to reach a specific financial goal.
+                        </p>
+                        
+                        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:24px;">
+                            <div>
+                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Target Amount (₹)</label>
+                                <input type="number" id="goal-target" class="filter-select" style="width:100%;font-size:1rem;" placeholder="e.g. 5000000" value="5000000">
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Time Horizon (Years)</label>
+                                <input type="number" id="goal-horizon" class="filter-select" style="width:100%;font-size:1rem;" placeholder="e.g. 10" value="10">
+                            </div>
+                            <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-secondary);">
+                                <input type="checkbox" id="goal-use-portfolio" checked> Include current portfolio value 
+                            </label>
+                            
+                            <button class="btn btn-primary" onclick="calculateGoal()" style="padding:10px;width:100%;justify-content:center;">Calculate Strategy</button>
+                        </div>
+                        
+                        <div id="goal-result" style="display:none;padding:16px;background:var(--card-bg-light);border-radius:12px;border:1px solid var(--border);">
+                            <div style="text-align:center;margin-bottom:16px;">
+                                <div style="font-size:0.85rem;color:var(--text-muted);">Required Monthly SIP</div>
+                                <div id="goal-res-sip" style="font-size:2rem;font-weight:700;color:var(--accent);"></div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.85rem;margin-bottom:16px;">
+                                <div><span style="color:var(--text-muted);">Shortfall:</span> <br><strong style="color:var(--text-primary);" id="goal-res-shortfall"></strong></div>
+                                <div><span style="color:var(--text-muted);">Assumed Return:</span> <br><strong style="color:var(--text-primary);" id="goal-res-return"></strong></div>
+                                <div><span style="color:var(--text-muted);">Profile:</span> <br><strong style="color:var(--text-primary);" id="goal-res-profile"></strong></div>
+                                <div><span style="color:var(--text-muted);">Current Value FV:</span> <br><strong style="color:var(--text-primary);" id="goal-res-fv"></strong></div>
+                            </div>
+                            <div style="font-size:0.8rem;color:var(--text-secondary);padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;">
+                                <strong>💡 Strategy:</strong> <span id="goal-res-strategy"></span>
+                            </div>
+                            
+                            <div id="goal-elss-box" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);padding:12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
+                                <strong>🟢 Tax Saving (80C):</strong> Consider allocating <span id="goal-res-elss" style="font-weight:600;color:#6ee7b7;"></span>/mo to ELSS funds to maximize tax savings.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tax Estimator -->
+                    <div class="card fade-in" style="padding:24px;">
+                        <div class="section-header">
+                            <div class="section-title">⚖️ Tax & Exit Load Estimator</div>
+                        </div>
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
+                            Estimated liabilities if you sell your entire portfolio today (FIFO accounting).
+                        </p>
+                        
+                        <div id="tax-loading" style="text-align:center;padding:30px 0;display:none;">
+                            <div class="spinner" style="margin:0 auto 10px;"></div>
+                            <div style="font-size:0.8rem;color:var(--text-muted);">Calculating FIFO capital gains...</div>
+                        </div>
+                        
+                        <div id="tax-content">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">
+                                <div style="padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:12px;">
+                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Total Est. Tax</div>
+                                    <div style="font-size:1.5rem;font-weight:700;color:#f87171;" id="tax-est">—</div>
+                                </div>
+                                <div style="padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;">
+                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Total Exit Loads</div>
+                                    <div style="font-size:1.5rem;font-weight:700;color:#fbbf24;" id="tax-load">—</div>
+                                </div>
+                            </div>
+                            
+                            <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Breakdown</div>
+                            <div style="display:flex;flex-direction:column;gap:8px;font-size:0.85rem;margin-bottom:24px;">
+                                <div style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
+                                    <span style="color:var(--text-secondary);">Equity STCG (20%)</span>
+                                    <strong id="tax-stcg">—</strong>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
+                                    <span style="color:var(--text-secondary);">Equity LTCG (12.5% >1.25L)</span>
+                                    <strong id="tax-ltcg">—</strong>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
+                                    <span style="color:var(--text-secondary);">Debt Gains (Slab Rate ~30%)</span>
+                                    <strong id="tax-debt">—</strong>
+                                </div>
+                            </div>
+                            
+                            <button class="btn btn-outline" style="width:100%;justify-content:center;padding:8px;" onclick="loadTaxes()">🔄 Recalculate Taxes</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: PROJECTIONS ════════════════════════ -->
+            <div class="tab-panel" id="tab-projections">
+                
+                <!-- Monte Carlo & Step-Up -->
+                <div class="card fade-in" style="padding:24px;margin-bottom:24px;">
+                    <div class="section-header">
+                        <div class="section-title">🚀 Wealth Projections & Monte Carlo Simulation</div>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:300px 1fr;gap:32px;">
+                        
+                        <!-- Inputs -->
+                        <div style="display:flex;flex-direction:column;gap:16px;">
+                            <div>
+                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Monthly SIP Additions (₹)</label>
+                                <input type="number" id="sim-sip" class="filter-select" style="width:100%;" value="20000">
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Annual SIP Step-Up (%)</label>
+                                <input type="number" id="sim-step" class="filter-select" style="width:100%;" value="10">
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Horizon (Years)</label>
+                                <input type="number" id="sim-years" class="filter-select" style="width:100%;" value="15">
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                                <div>
+                                    <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Exp Return %</label>
+                                    <input type="number" id="sim-ret" class="filter-select" style="width:100%;" value="12">
+                                </div>
+                                <div>
+                                    <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Volatility %</label>
+                                    <input type="number" id="sim-vol" class="filter-select" style="width:100%;" value="15">
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" onclick="runSimulations()" style="padding:10px;justify-content:center;margin-top:8px;">Run 500 Simulations</button>
+                            
+                            <!-- Key Outcomes Box -->
+                            <div id="sim-results" style="display:none;margin-top:16px;background:var(--card-bg-light);border:1px solid var(--border);border-radius:12px;padding:16px;">
+                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;text-align:center;">Estimated Future Value</div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:var(--text-secondary);font-size:0.85rem;">Median (50th %ile)</span>
+                                    <strong style="color:var(--text-primary);" id="sim-res-med"></strong>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#fca5a5;font-size:0.85rem;">Bear Market (10th %ile)</span>
+                                    <strong style="color:#f87171;" id="sim-res-bear"></strong>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;">
+                                    <span style="color:#6ee7b7;font-size:0.85rem;">Bull Market (90th %ile)</span>
+                                    <strong style="color:#34d399;" id="sim-res-bull"></strong>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Chart -->
+                        <div style="position:relative;min-height:300px;">
+                            <canvas id="sim-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Stress Test -->
+                <div class="card fade-in" style="padding:24px;">
+                    <div class="section-header">
+                        <div class="section-title">📉 Portfolio Stress Testing</div>
+                        <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;" onclick="loadStressTest()">Run Stress Test</button>
+                    </div>
+                    <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
+                        Estimates how much your current portfolio would drop during major historical market crashes, based on your current Equity vs Debt allocation.
+                    </p>
+                    
+                    <div id="stress-results" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:16px;">
+                        <div class="empty-state" style="grid-column:1/-1;">
+                            <div class="icon">🔍</div>
+                            <p>Click Run to simulate historical crashes</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: PORTFOLIO MANAGEMENT ════════════════════ -->
+            <div class="tab-panel" id="tab-manage">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
+                    
+                    <!-- Auto-Rebalancing -->
+                    <div class="card fade-in" style="padding:24px;">
+                        <div class="section-header">
+                            <div class="section-title">⚖️ Portfolio Rebalancing</div>
+                        </div>
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
+                            Input your target Equity allocation. The engine will calculate required Buy/Sell trades to align your portfolio.
+                        </p>
+                        
+                        <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:24px;">
+                            <div style="flex:1;">
+                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Target Equity %</label>
+                                <input type="number" id="rebal-target" class="filter-select" style="width:100%;font-size:1rem;" value="60">
+                            </div>
+                            <button class="btn btn-primary" onclick="calculateRebalance()" style="padding:10px;">Calculate Trades</button>
+                        </div>
+                        
+                        <div id="rebal-result" style="display:none;padding:16px;background:var(--card-bg-light);border-radius:12px;border:1px solid var(--border);">
+                            <div style="display:flex;justify-content:space-between;margin-bottom:12px;align-items:center;">
+                                <div style="font-size:0.85rem;color:var(--text-muted);">Current Equity</div>
+                                <div id="rebal-curr" style="font-size:1.2rem;font-weight:700;color:var(--text-primary);"></div>
+                            </div>
+                            
+                            <div id="rebal-msg" style="font-size:0.85rem;margin-bottom:16px;padding:12px;border-radius:8px;"></div>
+                            
+                            <div id="rebal-actions-container" style="display:none;">
+                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Suggested Trades</div>
+                                <div id="rebal-actions" style="display:flex;flex-direction:column;gap:8px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Dividend Cashflow -->
+                    <div class="card fade-in" style="padding:24px;">
+                        <div class="section-header">
+                            <div class="section-title">💸 Dividend Cashflow Tracker</div>
+                            <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;" onclick="loadDividends()">Refresh</button>
+                        </div>
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
+                            Tracks historical dividend payouts and reinvestments across your mutual funds by year.
+                        </p>
+                        
+                        <div id="div-content">
+                            <div class="empty-state">
+                                <div class="icon">📊</div>
+                                <p>Checking transaction history for dividends...</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+
+            <!-- ═════════════════════════ TAB: TRANSACTIONS ════════════════════════ -->
+            <div class="tab-panel" id="tab-transactions">
+                <div class="card fade-in" style="padding:24px;">
+                    <div class="section-header">
+                        <div class="section-title">Transaction History</div>
+                        <span id="txn-count" style="font-size:0.82rem;color:var(--text-muted);"></span>
+                    </div>
+
+                    <div class="txn-filters">
+                        <select class="filter-select" id="txn-type-filter" onchange="filterTransactions()">
+                            <option value="">All Types</option>
+                            <option value="BUY">BUY</option>
+                            <option value="SIP">SIP</option>
+                            <option value="SELL">SELL</option>
+                            <option value="SWITCH_IN">SWITCH IN</option>
+                            <option value="SWITCH_OUT">SWITCH OUT</option>
+                            <option value="DIVR">Dividend Reinvest</option>
+                        </select>
+                        <select class="filter-select" id="txn-fund-filter" onchange="filterTransactions()">
+                            <option value="">All Funds</option>
+                        </select>
+                        <input type="text" id="txn-search" class="filter-select" placeholder="🔍 Search fund name…"
+                            oninput="filterTransactions()" style="min-width:220px;" />
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="data-table" id="txn-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Fund</th>
+                                    <th>Type</th>
+                                    <th>Units</th>
+                                    <th>NAV (₹)</th>
+                                    <th>Amount (₹)</th>
+                                    <th>Balance Units</th>
+                                </tr>
+                            </thead>
+                            <tbody id="txn-body">
+                                <tr>
+                                    <td colspan="7">
+                                        <div class="empty-state">
+                                            <div class="icon">⏳</div>
+                                            <p>Loading transactions…</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /dashboard-root -->
+    </main>
+
+    <!-- ── AI Chatbot Widget ──────────────────────────────────────── -->
+    <div class="chat-widget">
+        <div class="chat-window" id="chat-window">
+            <div class="chat-header">
+                <div class="chat-header-title">
+                    <span style="font-size:22px">✨</span> AI Advisor
+                </div>
+                <button class="chat-header-close" onclick="toggleChat()">✕</button>
+            </div>
+            <div class="chat-body" id="chat-body">
+                <div class="chat-msg ai">
+                    <p>Hi there! I'm your AI financial expert. I have full context of your <strong>Mutual Fund Analyzer</strong> portfolio.</p>
+                    <p>Ask me anything about your current holdings, risk metrics, or general financial advice!</p>
+                </div>
+                <div class="typing-indicator" id="chat-typing">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" class="chat-input" placeholder="Ask about your portfolio..." onkeypress="handleChatKey(event)" />
+                <button class="chat-send" onclick="sendChatMessage()">➤</button>
+            </div>
+        </div>
+        <button class="chat-toggle" onclick="toggleChat()">✨</button>
+    </div>
+
+    <!-- Fund Details Modal — Comprehensive Deep Dive -->
+    <div class="modal-overlay" id="fund-modal" style="display:none;">
+        <div class="modal" style="max-width:900px;width:96vw;max-height:92vh;overflow-y:auto;padding:28px;">
+
+            <!-- ① Header -->
+            <button class="modal-close" id="fund-modal-close" onclick="closeFundModal()">✕</button>
+            <div style="margin-bottom:18px;">
+                <h2 id="fm-name" style="font-size:1.4rem;font-weight:800;color:#fff;line-height:1.3;margin-bottom:8px;">—</h2>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px;">
+                    <span class="badge" id="fm-category">—</span>
+                    <span class="badge" style="background:#1e3a5f;" id="fm-benchmark">—</span>
+                </div>
+                <!-- Meta pill bar: AUM · NAV · Expense Ratio · Exit Load -->
+                <div style="display:flex;flex-wrap:wrap;gap:12px;">
+                    <div class="fm-meta-pill"><span class="fm-meta-label">AUM</span><span class="fm-meta-val" id="fm-aum">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Current NAV</span><span class="fm-meta-val" id="fm-nav">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Expense Ratio</span><span class="fm-meta-val" id="fm-expense">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Exit Load</span><span class="fm-meta-val" id="fm-exit-load">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Portfolio Turnover</span><span class="fm-meta-val" id="fm-turnover">—</span></div>
+                </div>
+            </div>
+
+            <!-- ② Quantitative Metrics Grid -->
+            <h3 class="fm-section-title">📐 Quantitative Indicators</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:22px;">
+                <div class="fm-metric-pill"><div class="fmp-label">Sharpe Ratio</div><div class="fmp-val" id="fm-sharpe" style="color:var(--accent);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Sortino Ratio</div><div class="fmp-val" id="fm-sortino" style="color:var(--info);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Beta</div><div class="fmp-val" id="fm-beta" style="color:var(--warning);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Alpha (%)</div><div class="fmp-val" id="fm-alpha" style="color:var(--success);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Std Deviation</div><div class="fmp-val" id="fm-stddev" style="color:var(--warning);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Max Drawdown</div><div class="fmp-val" id="fm-drawdown" style="color:var(--danger);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Volatility</div><div class="fmp-val" id="fm-volatility" style="color:var(--warning);">—</div></div>
+                <div class="fm-metric-pill"><div class="fmp-label">Benchmark</div><div class="fmp-val" id="fm-bench-label" style="font-size:0.72rem;color:var(--text-secondary);">—</div></div>
+            </div>
+
+            <!-- ③ Rolling Returns -->
+            <h3 class="fm-section-title">📅 Trailing CAGR Returns</h3>
+            <div style="overflow-x:auto;margin-bottom:22px;">
+                <table class="data-table">
+                    <thead><tr><th>Period</th><th>1 Year</th><th>3 Year</th><th>5 Year</th><th>10 Year</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td style="color:var(--text-secondary);font-size:0.82rem;">Fund CAGR</td>
+                            <td id="fm-1y" class="num" style="font-weight:700;">—</td>
+                            <td id="fm-3y" class="num" style="font-weight:700;">—</td>
+                            <td id="fm-5y" class="num" style="font-weight:700;">—</td>
+                            <td id="fm-10y" class="num" style="font-weight:700;">—</td>
+                        </tr>
+                        <tr>
+                            <td style="color:var(--text-secondary);font-size:0.82rem;">Benchmark</td>
+                            <td id="fmb-1y" class="num" style="font-weight:700;color:var(--text-secondary);">—</td>
+                            <td id="fmb-3y" class="num" style="font-weight:700;color:var(--text-secondary);">—</td>
+                            <td id="fmb-5y" class="num" style="font-weight:700;color:var(--text-secondary);">—</td>
+                            <td id="fmb-10y" class="num" style="font-weight:700;color:var(--text-secondary);">—</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ④ Sector Allocation -->
+            <h3 class="fm-section-title">🏭 Sector Allocation</h3>
+            <div id="fm-sectors" style="margin-bottom:22px;">
+                <div class="empty-state">Loading sector data...</div>
+            </div>
+
+            <!-- ⑤ SIP vs Benchmark Chart -->
+            <h3 class="fm-section-title">📈 SIP Performance vs Benchmark</h3>
+            <div style="position:relative;height:220px;margin-bottom:22px;background:var(--bg-secondary);border-radius:12px;padding:12px;">
+                <canvas id="fm-sip-chart"></canvas>
+                <div class="empty-state" id="fm-sip-empty" style="display:none;">SIP comparison unavailable — no SIP/BUY transactions found.</div>
+            </div>
+
+            <!-- ⑥ Portfolio Disclosure — Top 20 Holdings -->
+            <h3 class="fm-section-title">💼 Portfolio Disclosure — Top Holdings</h3>
+            <div style="max-height:280px;overflow-y:auto;border-radius:8px;border:1px solid var(--border);">
+                <table class="data-table" id="fm-holdings-table">
+                    <thead><tr><th>Asset</th><th style="text-align:right;">Weight (%)</th><th style="text-align:right;min-width:90px;">Bar</th></tr></thead>
+                    <tbody id="fm-holdings-body">
+                        <tr><td colspan="3"><div class="empty-state">Loading...</div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // ── Globals ──────────────────────────────────────────────────────────────────
+        const API = '';
+        let allTransactions = [];
+        let allHoldings = [];
+        let allocChart = null;
+        let growthChart = null;
+
+        // ── Utility ──────────────────────────────────────────────────────────────────
+        const fmt = n => n == null ? '—' : '₹' + (+n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        const fmtPct = n => n == null ? '—' : (n >= 0 ? '+' : '') + (+n).toFixed(2) + '%';
+        const fmtNum = (n, d = 4) => n == null ? '—' : (+n).toLocaleString('en-IN', { maximumFractionDigits: d });
+        const colorClass = n => n >= 0 ? 'text-success' : 'text-danger';
+
+        function el(id) { return document.getElementById(id); }
+
+        // ── Tabs ─────────────────────────────────────────────────────────────────────
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+            window.scrollTo(0, 0);
+            
+            if (tab === 'risk' && el('risk-fund-body').querySelector('.empty-state')) loadRisk();
+            if (tab === 'planner' && el('tax-est').textContent === '—') {
+                loadTaxes();
+                calculateGoal();
+            }
+            if (tab === 'projections' && el('stress-results').querySelector('.empty-state')) {
+                runSimulations();
+                loadStressTest();
+            }
+            if (tab === 'manage' && el('div-content').querySelector('.empty-state')) {
+                loadDividends();
+            }
+        }
+
+        // ── Init ─────────────────────────────────────────────────────────────────────
+        async function init() {
+            try {
+                await Promise.all([loadSummary(), loadHoldings(), loadAllocation(), loadGrowth(), loadTransactions()]);
+                el('dashboard-root').style.opacity = '1';
+                el('dashboard-root').style.transition = 'opacity 0.4s';
+            } catch (e) {
+                if (e.message.includes('404')) {
+                    window.location.href = '/';
+                }
+            } finally {
+                el('loading-overlay').style.display = 'none';
+            }
+        }
+
+        async function apiFetch(path) {
+            const res = await fetch(API + path);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: res.statusText }));
+                throw new Error(err.detail || 'API error');
+            }
+            return res.json();
+        }
+
+        // ── Summary ───────────────────────────────────────────────────────────────────
+        async function loadSummary() {
+            const d = await apiFetch('/api/summary');
+            
+            const rawName = d.investor.name || 'Your Portfolio';
+            el('investor-name').textContent = rawName;
+            
+            // Show Family View badge if name indicates merged portfolios (e.g. "Jane Doe & John Doe")
+            if (rawName.includes('&')) {
+                el('family-badge').style.display = 'block';
+            } else {
+                el('family-badge').style.display = 'none';
+            }
+
+            el('period-tag').textContent = d.period.from && d.period.to
+                ? `Statement: ${d.period.from} → ${d.period.to}`
+                : '';
+
+            el('s-invested').textContent = fmt(d.total_invested);
+            el('s-value').textContent = fmt(d.current_value);
+            el('s-funds').textContent = `${d.fund_count} funds`;
+            el('s-gain-abs').textContent = `${d.total_gain >= 0 ? '▲' : '▼'} ${fmt(Math.abs(d.total_gain))} gain`;
+            el('s-gain-abs').className = 'value-sub ' + colorClass(d.total_gain);
+
+            const absEl = el('s-abs-return');
+            absEl.textContent = fmtPct(d.abs_return_pct);
+            absEl.className = 'value-main num ' + colorClass(d.abs_return_pct);
+
+            const xirrEl = el('s-xirr');
+            xirrEl.textContent = d.xirr != null ? fmtPct(d.xirr) : 'N/A';
+            if (d.xirr != null) xirrEl.className = 'value-main num ' + colorClass(d.xirr);
+        }
+
+        // ── Holdings ──────────────────────────────────────────────────────────────────
+        async function loadHoldings() {
+            allHoldings = await apiFetch('/api/holdings');
+            el('holdings-count').textContent = allHoldings.length + ' funds';
+
+            const tbody = el('holdings-table-body');
+            const topTbody = el('top-holdings-body');
+            tbody.innerHTML = '';
+            topTbody.innerHTML = '';
+
+            allHoldings.forEach((h, i) => {
+                const row = holdingRow(h);
+                tbody.insertAdjacentHTML('beforeend', row);
+                if (i < 5) topTbody.insertAdjacentHTML('beforeend', row);
+            });
+
+            // Populate the dedicated Fund Browser tab
+            buildFundBrowser(allHoldings);
+        }
+
+        function holdingRow(h) {
+            const gainColor = h.gain >= 0 ? 'text-success' : 'text-danger';
+            const xirrText = h.xirr != null ? `<span class="${colorClass(h.xirr)}">${fmtPct(h.xirr)}</span>` : '—';
+            return `<tr onclick="openFundModal('${h.isin}')" style="cursor:pointer;" title="Click for Deep Dive Details" class="clickable-row">
+    <td class="fund-name-cell">
+      <div class="name" style="color:var(--accent-light); text-decoration:underline; text-underline-offset:3px;">${h.name}</div>
+      <span class="cat-badge">${h.category || 'N/A'}</span>
+    </td>
+    <td class="num">${fmtNum(h.units)}</td>
+    <td class="num">${h.avg_nav ? fmtNum(h.avg_nav, 2) : '—'}</td>
+    <td class="num">${h.current_nav ? fmtNum(h.current_nav, 2) : '—'}</td>
+    <td class="num">${fmt(h.invested)}</td>
+    <td class="num">${fmt(h.current_value)}</td>
+    <td class="num ${gainColor}">${fmt(h.gain)}</td>
+    <td class="${gainColor} num">${fmtPct(h.gain_pct)}</td>
+    <td>${xirrText}</td>
+  </tr>`;
+        }
+
+        // ── Asset Allocation Chart ────────────────────────────────────────────────────
+        async function loadAllocation() {
+            const data = await apiFetch('/api/allocation');
+            const COLORS = [
+                '#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
+                '#f43f5e', '#a78bfa', '#34d399', '#fbbf24', '#60a5fa',
+            ];
+
+            if (allocChart) allocChart.destroy();
+            allocChart = new Chart(el('alloc-chart'), {
+                type: 'doughnut',
+                data: {
+                    labels: data.map(d => d.category),
+                    datasets: [{
+                        data: data.map(d => d.value),
+                        backgroundColor: COLORS.slice(0, data.length),
+                        borderColor: '#0a0e1a',
+                        borderWidth: 3,
+                        hoverOffset: 8,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    cutout: '68%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)} (${data[ctx.dataIndex].pct}%)`,
+                            },
+                        },
+                    },
+                },
+            });
+
+            // Custom legend
+            const legend = el('alloc-legend');
+            legend.innerHTML = data.map((d, i) => `
+    <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-secondary);">
+      <span style="width:10px;height:10px;border-radius:3px;background:${COLORS[i]};flex-shrink:0;"></span>
+      <span>${d.category} <span style="color:var(--text-muted)">${d.pct}%</span></span>
+    </div>
+  `).join('');
+        }
+
+        // ── Growth Chart ──────────────────────────────────────────────────────────────
+        async function loadGrowth() {
+            const data = await apiFetch('/api/growth');
+
+            if (growthChart) growthChart.destroy();
+            growthChart = new Chart(el('growth-chart'), {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.month),
+                    datasets: [{
+                        label: 'Amount Invested',
+                        data: data.map(d => d.invested),
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99,102,241,0.12)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: { label: ctx => ' ₹' + ctx.raw.toLocaleString('en-IN') },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#475569', maxTicksLimit: 8 },
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: {
+                                color: '#475569',
+                                callback: v => '₹' + (v >= 100000 ? (v / 100000).toFixed(1) + 'L' : (v / 1000).toFixed(0) + 'K'),
+                            },
+                        },
+                    },
+                },
+            });
+        }
+
+        // ── Risk ──────────────────────────────────────────────────────────────────────
+        async function loadRisk() {
+            el('risk-fund-body').innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⏳</div><p>Fetching benchmark data from NSE…</p></div></td></tr>';
+            try {
+                const d = await apiFetch('/api/risk');
+                const port = d.portfolio || {};
+
+                // Portfolio cards
+                setRiskCard('r-volatility', 'g-volatility', port.volatility_pct, '%', 50, 'warn', port.volatility_rating);
+                setRiskCard('r-sharpe', 'g-sharpe', port.sharpe_ratio, '', 3, 'pos', port.sharpe_rating);
+                setRiskCard('r-sortino', 'g-sortino', port.sortino_ratio, '', 3, 'pos', port.sortino_rating);
+                setRiskCard('r-drawdown', 'g-drawdown', port.max_drawdown_pct, '%', 50, 'neg', port.drawdown_rating);
+                setRiskCard('r-beta', 'g-beta', port.beta_vs_nifty50, '', 2, 'neutral', port.beta_rating);
+
+                // Per-fund table
+                const fundsData = Object.entries(d.per_fund || {});
+                if (!fundsData.length) {
+                    el('risk-fund-body').innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">📭</div><p>No fund data available</p></div></td></tr>';
+                    return;
+                }
+
+                el('risk-fund-body').innerHTML = fundsData.map(([isin, f]) => {
+                    const betaColor = f.beta == null ? '' : (Math.abs(f.beta) > 1.2 ? 'text-danger' : Math.abs(f.beta) < 0.8 ? 'text-success' : 'text-info');
+                    const sharpColor = f.sharpe_ratio == null ? '' : (f.sharpe_ratio >= 1 ? 'text-success' : f.sharpe_ratio >= 0 ? 'text-warning' : 'text-danger');
+                    const volColor = f.volatility_pct == null ? '' : (f.volatility_pct > 25 ? 'text-danger' : f.volatility_pct > 15 ? 'text-warning' : 'text-success');
+                    const ddColor = f.max_drawdown_pct == null ? '' : (Math.abs(f.max_drawdown_pct) > 30 ? 'text-danger' : 'text-warning');
+                    const betaBadge = ratingBadge(f.beta_rating, 'beta');
+                    const volBadge = ratingBadge(f.volatility_rating, 'vol');
+                    const sharpBadge = ratingBadge(f.sharpe_rating, 'sharpe');
+                    const sortBadge = ratingBadge(f.sortino_rating, 'sharpe');
+                    const ddBadge = ratingBadge(f.drawdown_rating, 'dd');
+                    const peerBadge = f.peer_rank ? `<span class="peer-rank-badge">${f.peer_rank}</span>` : '—';
+                    const interpretNote = f.interpretation_note ? `<div class="interp-note">${f.interpretation_note}</div>` : '';
+                    return `<tr onclick="openFundModal('${isin}')" style="cursor:pointer;" title="Click for Deep Dive Details" class="clickable-row">
+        <td class="fund-name-cell">
+          <div class="name" style="color:var(--accent-light); text-decoration:underline; text-underline-offset:3px;">${f.name}</div>
+          ${interpretNote}
+        </td>
+        <td style="color:var(--text-secondary);font-size:0.8rem;">${f.category || '—'}</td>
+        <td style="color:var(--text-muted);font-size:0.8rem;">${f.beta_benchmark || (f.note ? '<span style="opacity:.5">N/A – Debt</span>' : '—')}</td>
+        <td class="num ${betaColor}">${f.beta != null ? f.beta + '<br>' + betaBadge : '—'}</td>
+        <td class="num ${volColor}">${f.volatility_pct != null ? f.volatility_pct + '%<br>' + volBadge : '—'}</td>
+        <td class="num ${sharpColor}">${f.sharpe_ratio != null ? f.sharpe_ratio + '<br>' + sharpBadge : '—'}</td>
+        <td class="num">${f.sortino_ratio != null ? f.sortino_ratio + '<br>' + sortBadge : '—'}</td>
+        <td class="num ${ddColor}">${f.max_drawdown_pct != null ? f.max_drawdown_pct + '%<br>' + ddBadge : '—'}</td>
+        <td>${peerBadge}</td>
+      </tr>`;
+                }).join('');
+
+            } catch (e) {
+                el('risk-fund-body').innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>${e.message}</p></div></td></tr>`;
+            }
+        }
+
+        function setRiskCard(valId, gaugeId, val, suffix, maxVal, mode, rating) {
+            const el2 = el(valId);
+            const gauge = el(gaugeId);
+            if (val == null) { el2.textContent = '—'; return; }
+            const ratingHtml = rating && rating !== 'N/A' ? ` <span class="port-rating-badge port-rating-${rating.toLowerCase()}">${rating}</span>` : '';
+            el2.innerHTML = (+val).toFixed(2) + suffix + ratingHtml;
+            const pct = Math.min(Math.abs(val) / maxVal * 100, 100);
+            setTimeout(() => gauge.style.width = pct + '%', 200);
+
+            if (mode === 'pos') el2.className = 'metric-val ' + (val >= 1 ? 'text-success' : val >= 0 ? 'text-warning' : 'text-danger');
+            else if (mode === 'neg') el2.className = 'metric-val text-danger';
+            else if (mode === 'warn') el2.className = 'metric-val ' + (val > 25 ? 'text-danger' : 'text-warning');
+            else el2.className = 'metric-val text-info';
+        }
+
+        // Rating badge helper
+        function ratingBadge(rating, type) {
+            if (!rating || rating === 'N/A') return '';
+            const map = {
+                // Sharpe / Sortino
+                'Excellent': 'badge-excellent', 'Good': 'badge-good',
+                'Average': 'badge-average', 'Poor': 'badge-poor',
+                // Volatility
+                'Low': 'badge-good', 'Moderate': 'badge-average', 'High': 'badge-poor',
+                // Drawdown
+                'Mild': 'badge-good', 'Severe': 'badge-poor',
+                // Beta
+                'Defensive': 'badge-defensive', 'Neutral': 'badge-neutral', 'Aggressive': 'badge-aggressive',
+            };
+            const cls = map[rating] || 'badge-average';
+            return `<span class="risk-badge ${cls}">${rating}</span>`;
+        }
+
+        // ── Transactions ──────────────────────────────────────────────────────────────
+        async function loadTransactions() {
+            allTransactions = await apiFetch('/api/transactions?limit=500');
+            el('txn-count').textContent = allTransactions.length + ' transactions';
+
+            // Populate fund filter
+            const funds = [...new Set(allTransactions.map(t => t.scheme_name))].sort();
+            const fundFilter = el('txn-fund-filter');
+            funds.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f; opt.textContent = f.length > 50 ? f.slice(0, 50) + '…' : f;
+                fundFilter.appendChild(opt);
+            });
+
+            renderTransactions(allTransactions);
+        }
+
+        function filterTransactions() {
+            const typeVal = el('txn-type-filter').value;
+            const fundVal = el('txn-fund-filter').value;
+            const search = el('txn-search').value.toLowerCase();
+
+            let filtered = allTransactions;
+            if (typeVal) filtered = filtered.filter(t => t.type === typeVal);
+            if (fundVal) filtered = filtered.filter(t => t.scheme_name === fundVal);
+            if (search) filtered = filtered.filter(t => t.scheme_name.toLowerCase().includes(search));
+
+            el('txn-count').textContent = filtered.length + ' transactions';
+            renderTransactions(filtered);
+        }
+
+        function renderTransactions(txns) {
+            const tbody = el('txn-body');
+            if (!txns.length) {
+                tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">📭</div><p>No transactions found</p></div></td></tr>';
+                return;
+            }
+            tbody.innerHTML = txns.map(t => `<tr>
+    <td class="num" style="color:var(--text-secondary)">${t.date || '—'}</td>
+    <td class="fund-name-cell"><div class="name" style="font-size:0.84rem">${t.scheme_name}</div></td>
+    <td><span class="type-badge type-${t.type}">${t.type}</span></td>
+    <td class="num ${t.units > 0 ? 'text-success' : 'text-danger'}">${t.units > 0 ? '+' : ''}${fmtNum(t.units)}</td>
+    <td class="num">${t.nav ? fmtNum(t.nav, 4) : '—'}</td>
+    <td class="num">${t.amount ? fmt(Math.abs(t.amount)) : '—'}</td>
+    <td class="num">${fmtNum(t.balance_units)}</td>
+  </tr>`).join('');
+        }
+
+        // ── Portfolio Overlap ─────────────────────────────────────────────────────────
+        async function loadOverlap(refresh = false) {
+            el('overlap-empty').style.display = 'none';
+            el('overlap-content').style.display = 'none';
+            el('overlap-error').style.display = 'none';
+            el('overlap-loading').style.display = 'block';
+            el('overlap-refresh-btn').disabled = true;
+
+            try {
+                const d = await apiFetch('/api/overlap' + (refresh ? '?refresh=true' : ''));
+
+                el('overlap-loading').style.display = 'none';
+
+                if (d.message) {
+                    el('overlap-error-msg').textContent = d.message;
+                    el('overlap-error').style.display = 'block';
+                    return;
+                }
+
+                if (d.data_month) {
+                    el('overlap-data-month').textContent = '📅 Data: ' + d.data_month;
+                }
+
+                // Fund status badges
+                const statusDiv = el('overlap-fund-status');
+                statusDiv.innerHTML = '';
+                (d.funds_with_data || []).forEach(fn => {
+                    statusDiv.insertAdjacentHTML('beforeend',
+                        `<span style="background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);padding:4px 10px;border-radius:20px;font-size:0.78rem;">✅ ${fn.split(' - ')[0]}</span>`);
+                });
+                (d.funds_without_data || []).forEach(fn => {
+                    statusDiv.insertAdjacentHTML('beforeend',
+                        `<span style="background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.3);padding:4px 10px;border-radius:20px;font-size:0.78rem;">⚠️ ${fn.split(' - ')[0]} (no data)</span>`);
+                });
+
+                // Build heatmap matrix
+                const funds = Object.keys(d.per_fund || {});
+                const pairMap = {};
+                (d.all_pairs || []).forEach(p => {
+                    pairMap[p.fund_a + '||' + p.fund_b] = p.overlap_pct;
+                    pairMap[p.fund_b + '||' + p.fund_a] = p.overlap_pct;
+                });
+
+                const getColor = pct => {
+                    if (pct >= 40) return { bg: 'rgba(239,68,68,0.4)', text: '#fca5a5' };
+                    if (pct >= 25) return { bg: 'rgba(245,158,11,0.3)', text: '#fcd34d' };
+                    if (pct >= 10) return { bg: 'rgba(99,102,241,0.25)', text: '#a5b4fc' };
+                    return { bg: 'rgba(16,185,129,0.15)', text: '#6ee7b7' };
+                };
+
+                const shortName = fn => {
+                    const isPlan = s => /direct/i.test(s) ? 'D' : /regular/i.test(s) ? 'R' : '';
+                    // Strip boilerplate but keep fund identity
+                    let clean = fn.replace(/Growth|IDCW|Dividend|Option|Reinvestment|Payout|-/gi, '').replace(/\s+/g, ' ').trim();
+                    // Remove trailing "Direct Plan" / "Regular Plan" so we can re-add as tag
+                    const tag = isPlan(clean);
+                    clean = clean.replace(/\b(Direct|Regular)\s*(Plan)?\b/gi, '').replace(/\s+/g, ' ').trim();
+                    // Trim at "Fund" to shorten
+                    const core = clean.includes('Fund') ? clean.split('Fund')[0].trim() : clean;
+                    return tag ? `${core} <span style="font-size:0.65rem;background:rgba(255,255,255,0.12);border-radius:3px;padding:1px 4px;color:var(--accent-light);">${tag}</span>` : core;
+                };
+
+                const matrix = el('overlap-matrix');
+                let html = '<tr><th style="padding:6px 10px;color:var(--text-muted);font-size:0.75rem;"></th>';
+                funds.forEach(fn => {
+                    html += `<th style="padding:6px 8px;color:var(--text-secondary);font-size:0.72rem;text-align:center;max-width:80px;white-space:normal;word-break:break-word;" title="${fn}">${shortName(fn)}</th>`;
+                });
+                html += '</tr>';
+
+                funds.forEach(fa => {
+                    html += `<tr><td style="padding:6px 10px;color:var(--text-secondary);font-size:0.72rem;white-space:nowrap;" title="${fa}">${shortName(fa)}</td>`;
+                    funds.forEach(fb => {
+                        if (fa === fb) {
+                            html += `<td style="background:rgba(255,255,255,0.06);border-radius:6px;padding:12px 8px;text-align:center;font-size:0.8rem;color:var(--text-muted);">—</td>`;
+                        } else {
+                            const pct = pairMap[fa + '||' + fb];
+                            if (pct == null) {
+                                html += `<td style="background:rgba(255,255,255,0.03);border-radius:6px;padding:12px 8px;text-align:center;font-size:0.8rem;color:var(--text-muted);">N/A</td>`;
+                            } else {
+                                const c = getColor(pct);
+                                html += `<td style="background:${c.bg};border-radius:6px;padding:12px 8px;text-align:center;font-size:0.82rem;font-weight:600;color:${c.text};cursor:default;" title="${fa} ↔ ${fb}: ${pct}% weighted overlap">${pct}%</td>`;
+                            }
+                        }
+                    });
+                    html += '</tr>';
+                });
+                matrix.innerHTML = html;
+
+                // Top overlapping pairs cards
+                const pairsDiv = el('overlap-pairs');
+                pairsDiv.innerHTML = '';
+                const topPairs = (d.top_pairs || []).slice(0, 5);
+                if (!topPairs.length) {
+                    pairsDiv.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No overlapping pairs found.</p>';
+                } else {
+                    topPairs.forEach(p => {
+                        const severity = p.overlap_pct >= 40 ? '🔴' : p.overlap_pct >= 25 ? '🟡' : '🟢';
+                        const sharedHtml = (p.top_shared || []).slice(0, 6).map(s =>
+                            `<span style="background:rgba(99,102,241,.15);color:#a5b4fc;padding:3px 8px;border-radius:12px;font-size:0.75rem;">${s.name} (${s.weight_a}% / ${s.weight_b}%)</span>`
+                        ).join('');
+                        pairsDiv.insertAdjacentHTML('beforeend', `
+                        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                                <div style="font-size:0.88rem;font-weight:600;color:var(--text-primary);">${severity} ${shortName(p.fund_a)} ↔ ${shortName(p.fund_b)}</div>
+                                <div style="font-size:1.2rem;font-weight:700;color:${p.overlap_pct >= 40 ? '#f87171' : p.overlap_pct >= 25 ? '#fcd34d' : '#6ee7b7'}">${p.overlap_pct}% overlap</div>
+                            </div>
+                            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">${p.shared_stocks} shared stocks · Jaccard ${p.jaccard}%</div>
+                            <div style="display:flex;flex-wrap:wrap;gap:6px;">${sharedHtml}</div>
+                        </div>`);
+                    });
+                }
+
+                // Multi-fund stocks
+                const stocksDiv = el('overlap-stocks');
+                stocksDiv.innerHTML = '';
+                const multiStocks = Object.entries(d.multi_fund_stocks || {}).sort((a, b) => b[1].length - a[1].length).slice(0, 30);
+                if (!multiStocks.length) {
+                    stocksDiv.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No common stocks found.</p>';
+                } else {
+                    multiStocks.forEach(([stock, fundList]) => {
+                        stocksDiv.insertAdjacentHTML('beforeend',
+                            `<span style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.2);color:var(--text-secondary);padding:5px 12px;border-radius:20px;font-size:0.78rem;" title="Held by: ${fundList.join(', ')}">${stock} <span style="color:#818cf8;font-weight:600;">(${fundList.length})</span></span>`);
+                    });
+                }
+
+                el('overlap-content').style.display = 'block';
+
+            } catch (e) {
+                el('overlap-loading').style.display = 'none';
+                el('overlap-error-msg').textContent = e.message || 'Failed to load overlap data';
+                el('overlap-error').style.display = 'block';
+            } finally {
+                el('overlap-refresh-btn').disabled = false;
+            }
+        }
+
+        // ── Table Sort ───────────────────────────────────────────────────────────────
+        let sortState = {};
+        function sortTable(tbodyId, colIdx) {
+            const key = tbodyId + '_' + colIdx;
+            sortState[key] = !sortState[key];
+            const asc = sortState[key];
+
+            const tbody = document.getElementById(tbodyId);
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((a, b) => {
+                const av = a.cells[colIdx]?.textContent.replace(/[₹,+%]/g, '').trim() || '';
+                const bv = b.cells[colIdx]?.textContent.replace(/[₹,+%]/g, '').trim() || '';
+                const an = parseFloat(av), bn = parseFloat(bv);
+                if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+                return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        }
+
+        // ── Planner & Tax ─────────────────────────────────────────────────────────────
+        async function loadTaxes() {
+            el('tax-content').style.display = 'none';
+            el('tax-loading').style.display = 'block';
+            
+            try {
+                const d = await apiFetch('/api/taxes');
+                
+                el('tax-est').textContent = fmt(d.estimated_tax);
+                el('tax-load').textContent = fmt(d.total_exit_load);
+                
+                el('tax-stcg').textContent = fmt(d.total_stcg_equity);
+                el('tax-ltcg').textContent = fmt(d.total_ltcg_equity);
+                el('tax-debt').textContent = fmt(d.total_gains_debt);
+                
+            } catch (e) {
+                console.error("Tax error", e);
+                el('tax-est').textContent = "Error";
+            } finally {
+                el('tax-loading').style.display = 'none';
+                el('tax-content').style.display = 'block';
+            }
+        }
+        
+        async function calculateGoal() {
+            const target = parseFloat(el('goal-target').value) || 0;
+            const horizon = parseFloat(el('goal-horizon').value) || 0;
+            const incCurrent = el('goal-use-portfolio').checked;
+            
+            if (target <= 0 || horizon <= 0) return;
+            
+            try {
+                const res = await fetch(API + '/api/goal-strategy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_amount: target,
+                        horizon_years: horizon,
+                        include_current_portfolio: incCurrent
+                    })
+                });
+                const d = await res.json();
+                
+                if (d.error) throw new Error(d.error);
+                
+                el('goal-res-sip').textContent = fmt(d.required_sip_monthly) + ' /mo';
+                el('goal-res-shortfall').textContent = fmt(d.shortfall);
+                el('goal-res-return').textContent = d.assumed_return_pct + '%';
+                el('goal-res-profile').textContent = d.risk_profile;
+                el('goal-res-fv').textContent = fmt(d.future_value_of_current);
+                el('goal-res-strategy').textContent = d.fund_strategy + ` Allocation: ${d.asset_allocation_recommendation.equity}% Eq / ${d.asset_allocation_recommendation.debt}% Dt`;
+                
+                if (d.tax_saving_elss_sip > 0) {
+                    el('goal-elss-box').style.display = 'block';
+                    el('goal-res-elss').textContent = fmt(d.tax_saving_elss_sip);
+                } else {
+                    el('goal-elss-box').style.display = 'none';
+                }
+                
+                el('goal-result').style.display = 'block';
+                
+            } catch(e) {
+                console.error("Goal plan error", e);
+            }
+        }
+
+        // ── Projections & Simulations ────────────────────────────────────────────────
+        let simChart = null;
+        
+        async function runSimulations() {
+            const sip = parseFloat(el('sim-sip').value) || 0;
+            const step = parseFloat(el('sim-step').value) || 0;
+            const years = parseInt(el('sim-years').value) || 0;
+            const ret = parseFloat(el('sim-ret').value) || 0;
+            const vol = parseFloat(el('sim-vol').value) || 0;
+            
+            if (years <= 0) return;
+            
+            try {
+                const res = await fetch(API + '/api/simulations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        monthly_sip: sip,
+                        step_up_pct: step,
+                        horizon_years: years,
+                        mean_return_pct: ret,
+                        volatility_pct: vol
+                    })
+                });
+                const d = await res.json();
+                
+                const mc = d.monte_carlo_analysis;
+                
+                // Update text results
+                el('sim-res-med').textContent = fmt(mc.outcomes.median);
+                el('sim-res-bull').textContent = fmt(mc.outcomes.bull_market_90th);
+                el('sim-res-bear').textContent = fmt(mc.outcomes.bear_market_10th);
+                el('sim-results').style.display = 'block';
+                
+                // Draw Chart
+                const pd = mc.plot_data;
+                const labels = pd.months.map(m => m % 12 === 0 ? 'Year ' + (m/12) : '');
+                
+                if (simChart) simChart.destroy();
+                simChart = new Chart(el('sim-chart'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Bull (90th %ile)',
+                                data: pd.bull_path,
+                                borderColor: 'rgba(52, 211, 153, 0.6)',
+                                backgroundColor: 'transparent',
+                                borderWidth: 1.5,
+                                borderDash: [5, 5],
+                                pointRadius: 0
+                            },
+                            {
+                                label: 'Median (50th %ile)',
+                                data: pd.median_path,
+                                borderColor: '#818cf8',
+                                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                                borderWidth: 3,
+                                fill: true,
+                                pointRadius: 0
+                            },
+                            {
+                                label: 'Bear (10th %ile)',
+                                data: pd.bear_path,
+                                borderColor: 'rgba(248, 113, 113, 0.6)',
+                                backgroundColor: 'transparent',
+                                borderWidth: 1.5,
+                                borderDash: [5, 5],
+                                pointRadius: 0
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { position: 'top', labels: { color: 'rgba(255,255,255,0.7)', boxWidth: 12 } },
+                            tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + fmt(ctx.raw) } }
+                        },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 10 } },
+                            y: { 
+                                grid: { color: 'rgba(255,255,255,0.05)' }, 
+                                ticks: { color: '#64748b', callback: v => '₹' + (v >= 10000000 ? (v/10000000).toFixed(1) + 'Cr' : (v >= 100000 ? (v/100000).toFixed(1) + 'L' : v)) }
+                            }
+                        }
+                    }
+                });
+                
+            } catch (e) {
+                console.error("Simulation error", e);
+            }
+        }
+        
+        async function loadStressTest() {
+            const container = el('stress-results');
+            container.innerHTML = '<div class="spinner" style="grid-column:1/-1;margin:20px auto;"></div>';
+            
+            try {
+                const d = await apiFetch('/api/stress-test');
+                if (d.error) {
+                    container.innerHTML = `<p style="color:var(--danger)">${d.error}</p>`;
+                    return;
+                }
+                
+                container.innerHTML = d.stress_tests.map(st => `
+                <div style="background:var(--card-bg-light);border:1px solid var(--border);border-radius:12px;padding:16px;">
+                    <div style="font-weight:600;color:var(--text-primary);margin-bottom:6px;font-size:0.9rem;">${st.scenario}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:14px;">${st.description}</div>
+                    
+                    <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;">
+                        <div>
+                            <div style="font-size:0.75rem;color:var(--text-secondary);">Est. Drop</div>
+                            <div style="font-size:1.4rem;font-weight:700;color:#f87171;">${st.blended_drop_pct}%</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:0.75rem;color:var(--text-secondary);">Loss Value</div>
+                            <div style="font-size:1rem;font-weight:600;color:var(--text-primary);">${fmt(st.estimated_loss)}</div>
+                        </div>
+                    </div>
+                </div>
+                `).join('');
+                
+            } catch (e) {
+                container.innerHTML = `<p style="color:var(--danger)">Failed to load stress tests</p>`;
+            }
+        }
+
+        // ── Portfolio Management ─────────────────────────────────────────────────────
+        async function calculateRebalance() {
+            const tgt = parseFloat(el('rebal-target').value) || 0;
+            if (tgt <= 0 || tgt > 100) return;
+            
+            try {
+                const res = await fetch(API + '/api/rebalance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target_equity_pct: tgt })
+                });
+                const d = await res.json();
+                
+                if (d.error) {
+                    alert(d.error); return;
+                }
+                
+                el('rebal-curr').textContent = d.current_equity_pct + '%';
+                
+                const msgBox = el('rebal-msg');
+                msgBox.textContent = d.message;
+                
+                if (!d.action_required) {
+                    msgBox.style.background = 'rgba(16, 185, 129, 0.1)';
+                    msgBox.style.color = '#10b981';
+                    msgBox.style.border = '1px solid rgba(16, 185, 129, 0.2)';
+                    el('rebal-actions-container').style.display = 'none';
+                } else {
+                    msgBox.style.background = 'rgba(245, 158, 11, 0.1)';
+                    msgBox.style.color = '#fbbf24';
+                    msgBox.style.border = '1px solid rgba(245, 158, 11, 0.2)';
+                    
+                    const acts = el('rebal-actions');
+                    acts.innerHTML = d.actions.map(a => `
+                        <div style="display:flex;justify-content:space-between;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;align-items:center;">
+                            <div style="display:flex;align-items:center;gap:12px;">
+                                <span style="padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;background:${a.type==='BUY'?'rgba(16,185,129,0.2)':'rgba(239,68,68,0.2)'};color:${a.type==='BUY'?'#10b981':'#ef4444'}">${a.type}</span>
+                                <span style="font-size:0.85rem;color:var(--text-primary);">${a.asset_class} Funds</span>
+                            </div>
+                            <strong style="color:var(--text-primary);">${fmt(a.amount)}</strong>
+                        </div>
+                    `).join('');
+                    el('rebal-actions-container').style.display = 'block';
+                }
+                
+                el('rebal-result').style.display = 'block';
+                
+            } catch (e) {
+                console.error("Rebalance error", e);
+            }
+        }
+        
+        let divChart = null;
+        async function loadDividends() {
+            const container = el('div-content');
+            container.innerHTML = '<div class="spinner" style="margin:20px auto;"></div>';
+            
+            try {
+                const d = await apiFetch('/api/dividends');
+                if (d.error) {
+                    container.innerHTML = `<p style="color:var(--danger)">${d.error}</p>`;
+                    return;
+                }
+                
+                if (!d.has_dividends) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">🏜️</div>
+                            <p>No dividends found in transaction history.</p>
+                            <span style="font-size:0.75rem;">(Most Growth plans reinvest automatically without logging as dividend payouts.)</span>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = `
+                    <div style="text-align:center;margin-bottom:20px;">
+                        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;">Total Lifetime Dividends Received</div>
+                        <div style="font-size:2rem;font-weight:700;color:var(--accent);">${fmt(d.total_dividends_received)}</div>
+                    </div>
+                    <div style="position:relative;height:250px;">
+                        <canvas id="div-chart"></canvas>
+                    </div>
+                `;
+                
+                // Draw Chart
+                const pd = d.chart_data;
+                const ctx = document.getElementById('div-chart');
+                
+                if (divChart) divChart.destroy();
+                divChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: pd.years,
+                        datasets: [{
+                            label: 'Dividends (₹)',
+                            data: pd.amounts,
+                            backgroundColor: 'rgba(99, 102, 241, 0.8)',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { callbacks: { label: ctx => ' ₹ ' + fmt(ctx.raw) } }
+                        },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { color: '#64748b' } },
+                            y: { 
+                                grid: { color: 'rgba(255,255,255,0.05)' }, 
+                                ticks: { color: '#64748b', callback: v => (v >= 1000 ? (v/1000).toFixed(1) + 'k' : v) }
+                            }
+                        }
+                    }
+                });
+                
+            } catch (e) {
+                container.innerHTML = `<p style="color:var(--danger)">Failed to load dividends</p>`;
+            }
+        }
+
+        // ── AI Chatbot ───────────────────────────────────────────────────────────────
+        let isChatOpen = false;
+        function toggleChat() {
+            const win = el('chat-window');
+            isChatOpen = !isChatOpen;
+            win.classList.toggle('active', isChatOpen);
+            if (isChatOpen) {
+                setTimeout(() => el('chat-input').focus(), 300);
+            }
+        }
+
+        function handleChatKey(e) {
+            if (e.key === 'Enter') sendChatMessage();
+        }
+        
+        // Very basic simple markdown parser for bold and line breaks
+        function parseMd(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br/>');
+        }
+
+        async function sendChatMessage() {
+            const input = el('chat-input');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            // Add user message
+            addCommentLine('user', msg);
+            input.value = '';
+
+            // Show typing
+            const typing = el('chat-typing');
+            typing.classList.add('active');
+            
+            // Auto scroll to bottom
+            const body = el('chat-body');
+            body.appendChild(typing);
+            body.scrollTop = body.scrollHeight;
+
+            try {
+                const res = await fetch(API + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg })
+                });
+                
+                if (!res.ok) throw new Error('Failed to get response');
+                
+                const data = await res.json();
+                typing.classList.remove('active');
+                addCommentLine('ai', data.reply);
+            } catch (e) {
+                typing.classList.remove('active');
+                addCommentLine('ai', "Sorry, I'm having trouble connecting right now.");
+            }
+        }
+
+        function addCommentLine(role, text) {
+            const body = el('chat-body');
+            const div = document.createElement('div');
+            div.className = `chat-msg ${role}`;
+            
+            if (role === 'ai') {
+                div.innerHTML = parseMd(text);
+            } else {
+                div.textContent = text;
+            }
+            
+            body.insertBefore(div, el('chat-typing'));
+            body.scrollTop = body.scrollHeight;
+        }
+
+        // ── Fund Details Modal ────────────────────────────────────────────────────────
+        let _sipChart = null;
+
+        async function openFundModal(isin) {
+            if (!isin) return;
+            const modal = el('fund-modal');
+            modal.style.display = 'flex';
+
+            // ── Reset state ──
+            el('fm-name').textContent = 'Loading…';
+            ['fm-category','fm-benchmark','fm-aum','fm-nav','fm-expense','fm-exit-load','fm-turnover',
+             'fm-sharpe','fm-sortino','fm-beta','fm-alpha','fm-stddev','fm-drawdown','fm-volatility','fm-bench-label',
+             'fm-1y','fm-3y','fm-5y','fm-10y'].forEach(id => { if (el(id)) el(id).textContent = '—'; });
+            el('fm-sectors').innerHTML = '<div class="empty-state">Loading…</div>';
+            el('fm-holdings-body').innerHTML = '<tr><td colspan="3"><div class="spinner" style="margin:20px auto;"></div></td></tr>';
+            el('fm-sip-empty').style.display = 'none';
+            if (_sipChart) { _sipChart.destroy(); _sipChart = null; }
+
+            try {
+                const d = await apiFetch(`/api/fund/${isin}`);
+
+                // ── ① Header ──
+                el('fm-name').textContent = d.name || '—';
+                el('fm-category').textContent = d.category || '—';
+                el('fm-benchmark').textContent = d.benchmark || '—';
+
+                const fmtCr = v => v != null ? `₹${(+v).toLocaleString('en-IN')} Cr` : 'N/A';
+                el('fm-aum').textContent     = fmtCr(d.aum_cr);
+                el('fm-nav').textContent     = d.current_nav != null ? `₹${(+d.current_nav).toFixed(4)}` + (d.nav_date ? ` (${d.nav_date})` : '') : 'N/A';
+                el('fm-expense').textContent = d.expense_ratio != null ? `${d.expense_ratio}%` : 'N/A';
+                el('fm-exit-load').textContent = d.exit_load || 'N/A';
+                el('fm-turnover').textContent = d.portfolio_turnover != null ? `${d.portfolio_turnover}%` : 'N/A';
+
+                // ── ② Quant Metrics ──
+                const fmtR = (v, suffix = '') => v != null ? `${(+v).toFixed(2)}${suffix}` : 'N/A';
+                const r = d.risk || {};
+                el('fm-sharpe').textContent    = fmtR(r.sharpe);
+                el('fm-sortino').textContent   = fmtR(r.sortino);
+                el('fm-beta').textContent      = fmtR(r.beta);
+                el('fm-alpha').textContent     = fmtR(r.alpha, '%');
+                el('fm-stddev').textContent    = fmtR(r.volatility, '%');
+                el('fm-drawdown').textContent  = r.max_drawdown_pct != null ? `${(+r.max_drawdown_pct).toFixed(2)}%` : 'N/A';
+                el('fm-volatility').textContent = fmtR(r.volatility, '%');
+                el('fm-bench-label').textContent = r.benchmark_name || d.benchmark || '—';
+
+                // colour alpha and drawdown
+                if (r.alpha != null) el('fm-alpha').style.color = r.alpha >= 0 ? 'var(--success)' : 'var(--danger)';
+
+                // ── ③ Rolling Returns ──
+                const ret = d.returns || {};
+                const fmtRet = v => v != null ? `${(+v).toFixed(2)}%` : 'N/A';
+                const setRetColor = (id, v) => {
+                    const e = el(id); 
+                    if (e) {
+                        e.textContent = fmtRet(v);
+                        if (v != null) e.style.color = v >= 0 ? 'var(--success)' : 'var(--danger)';
+                    }
+                };
+                setRetColor('fm-1y',  ret['1Y']);
+                setRetColor('fm-3y',  ret['3Y']);
+                setRetColor('fm-5y',  ret['5Y']);
+                setRetColor('fm-10y', ret['10Y']);
+
+                const bRet = d.benchmark_cagr || {};
+                if (el('fmb-1y')) el('fmb-1y').textContent = fmtRet(bRet['1Y']);
+                if (el('fmb-3y')) el('fmb-3y').textContent = fmtRet(bRet['3Y']);
+                if (el('fmb-5y')) el('fmb-5y').textContent = fmtRet(bRet['5Y']);
+                if (el('fmb-10y')) el('fmb-10y').textContent = fmtRet(bRet['10Y']);
+
+                // ── ④ Sector Allocation ──
+                const sectors = el('fm-sectors');
+                if (d.sector_allocation && d.sector_allocation.length) {
+                    const maxW = Math.max(...d.sector_allocation.map(s => s.weight));
+                    sectors.innerHTML = d.sector_allocation.slice(0, 12).map(s => `
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px;">
+                            <div style="width:160px;font-size:0.8rem;color:var(--text-secondary);flex-shrink:0;text-align:right;">${s.sector}</div>
+                            <div style="flex:1;background:var(--bg-primary);border-radius:4px;height:14px;overflow:hidden;">
+                                <div style="width:${(s.weight/maxW*100).toFixed(1)}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--info));border-radius:4px;transition:width 0.5s ease;"></div>
+                            </div>
+                            <div style="width:44px;font-size:0.8rem;font-weight:700;color:var(--info);">${s.weight.toFixed(1)}%</div>
+                        </div>`).join('');
+                } else {
+                    sectors.innerHTML = '<div class="empty-state">Sector data unavailable from Morningstar</div>';
+                }
+
+                // ── ⑤ SIP vs Benchmark Chart ──
+                const sip = d.sip_vs_benchmark || {};
+                const sipCanvas = el('fm-sip-chart');
+                if (sip.labels && sip.labels.length) {
+                    _sipChart = new Chart(sipCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: sip.labels,
+                            datasets: [
+                                {
+                                    label: 'SIP in Fund',
+                                    data: sip.fund_value,
+                                    borderColor: '#6366f1',
+                                    backgroundColor: 'rgba(99,102,241,0.1)',
+                                    tension: 0.35, pointRadius: 0, fill: true
+                                },
+                                {
+                                    label: sip.benchmark_name || 'Benchmark',
+                                    data: sip.benchmark_value,
+                                    borderColor: '#f59e0b',
+                                    backgroundColor: 'rgba(245,158,11,0.06)',
+                                    tension: 0.35, pointRadius: 0, fill: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
+                            scales: {
+                                x: { ticks: { color: '#64748b', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                                y: { ticks: { color: '#64748b', callback: v => '₹' + v.toLocaleString('en-IN') }, grid: { color: 'rgba(255,255,255,0.04)' } }
+                            }
+                        }
+                    });
+                    el('fm-sip-empty').style.display = 'none';
+                } else {
+                    sipCanvas.style.display = 'none';
+                    el('fm-sip-empty').style.display = 'block';
+                }
+
+                // ── ⑥ Holdings ──
+                const hBody = el('fm-holdings-body');
+                if (d.holdings && d.holdings.length) {
+                    const maxHW = Math.max(...d.holdings.map(h => h.weight));
+                    hBody.innerHTML = d.holdings.map(h => `<tr>
+                        <td style="color:var(--text-primary);padding:8px 10px;">${h.asset}</td>
+                        <td class="num" style="text-align:right;color:var(--info);padding:8px 10px;">${h.weight.toFixed(2)}%</td>
+                        <td style="padding:8px 10px;min-width:90px;">
+                            <div style="background:var(--bg-primary);border-radius:3px;height:8px;">
+                                <div style="width:${(h.weight/maxHW*100).toFixed(1)}%;height:100%;background:var(--accent);border-radius:3px;"></div>
+                            </div>
+                        </td>
+                    </tr>`).join('');
+                } else {
+                    hBody.innerHTML = '<tr><td colspan="3"><div class="empty-state">No holdings data from Morningstar</div></td></tr>';
+                }
+            } catch (e) {
+                el('fm-name').textContent = 'Error loading fund details';
+                console.error(e);
+            }
+        }
+
+
+        function closeFundModal() {
+            el('fund-modal').style.display = 'none';
+        }
+
+        // Close on clicking outside
+        el('fund-modal').addEventListener('click', e => {
+            if (e.target.id === 'fund-modal') closeFundModal();
+        });
+
+        // ── Fund Browser Tab ─────────────────────────────────────────────────────────
+        let _allFundCards = [];
+
+        function buildFundBrowser(holdings) {
+            const active = holdings.filter(h => h.units > 0.001);
+            _allFundCards = active;
+
+            // Populate category filter
+            const sel = el('funds-category-filter');
+            const cats = [...new Set(active.map(h => h.category).filter(Boolean))].sort();
+            cats.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c; opt.textContent = c;
+                sel.appendChild(opt);
+            });
+
+            renderFundCards(active);
+        }
+
+        function filterFundCards() {
+            const q = (el('funds-search').value || '').toLowerCase();
+            const cat = el('funds-category-filter').value;
+            const filtered = _allFundCards.filter(h =>
+                (!q || h.name.toLowerCase().includes(q)) &&
+                (!cat || h.category === cat)
+            );
+            renderFundCards(filtered);
+        }
+
+        function renderFundCards(funds) {
+            const grid = el('funds-grid');
+            const empty = el('funds-empty');
+            if (!funds.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+            empty.style.display = 'none';
+
+            const gainColor = v => v == null ? 'var(--text-muted)' : v >= 0 ? 'var(--success)' : 'var(--danger)';
+            const gainIcon  = v => v == null ? '' : v >= 0 ? '▲' : '▼';
+
+            grid.innerHTML = funds.map(h => {
+                const xirr = h.xirr != null ? `${gainIcon(h.xirr)}&thinsp;${Math.abs(h.xirr).toFixed(2)}%` : 'N/A';
+                const gain = h.gain_pct != null ? `${gainIcon(h.gain_pct)}&thinsp;${Math.abs(h.gain_pct).toFixed(2)}%` : 'N/A';
+                const val = h.current_value > 0 ? `₹${h.current_value.toLocaleString('en-IN')}` : '₹0';
+                const inv = h.invested > 0 ? `₹${h.invested.toLocaleString('en-IN')}` : '₹0';
+                const xirrColor = gainColor(h.xirr);
+                const gainClr  = gainColor(h.gain_pct);
+
+                return `<div class="fund-browser-card" onclick="openFundModal('${h.isin}')" title="Click for deep-dive details">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                        <div style="flex:1;min-width:0;">
+                            <div class="name" style="font-size:0.95rem;font-weight:700;color:var(--accent-light);white-space:normal;line-height:1.3;">${h.name}</div>
+                            <span class="cat-badge" style="margin-top:5px;display:inline-block;">${h.category || 'N/A'}</span>
+                        </div>
+                        <div style="text-align:right;flex-shrink:0;">
+                            <div style="font-size:1.15rem;font-weight:800;color:var(--text-primary);">${val}</div>
+                            <div style="font-size:0.75rem;color:var(--text-secondary);">Current Value</div>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;">
+                        <div style="background:var(--bg-primary);border-radius:8px;padding:10px;text-align:center;">
+                            <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Invested</div>
+                            <div style="font-size:0.95rem;font-weight:700;color:var(--text-primary);margin-top:3px;">${inv}</div>
+                        </div>
+                        <div style="background:var(--bg-primary);border-radius:8px;padding:10px;text-align:center;">
+                            <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Abs. Gain</div>
+                            <div style="font-size:0.95rem;font-weight:700;color:${gainClr};margin-top:3px;">${gain}</div>
+                        </div>
+                        <div style="background:var(--bg-primary);border-radius:8px;padding:10px;text-align:center;">
+                            <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">XIRR</div>
+                            <div style="font-size:0.95rem;font-weight:700;color:${xirrColor};margin-top:3px;">${xirr}</div>
+                        </div>
+                        <div style="background:var(--bg-primary);border-radius:8px;padding:10px;text-align:center;">
+                            <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Units</div>
+                            <div style="font-size:0.95rem;font-weight:700;color:var(--text-primary);margin-top:3px;">${h.units.toFixed(3)}</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;text-align:right;">
+                        <span style="font-size:0.75rem;color:var(--accent);font-weight:600;letter-spacing:0.3px;">🔍 Deep Dive &rarr;</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // ── Boot ──────────────────────────────────────────────────────────────────────
+        init();
+    </script>
+    </div>
+
+</body>
+</html>

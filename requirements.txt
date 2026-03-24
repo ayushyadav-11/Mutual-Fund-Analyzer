@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-multipart
+casparser
+pyxirr
+numpy
+pandas
+yfinance
+pdfminer.six
+aiofiles
+python-dotenv
+httpx
+openai
+pydantic
+redis
+requests
