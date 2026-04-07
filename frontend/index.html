@@ -18,7 +18,7 @@
     </a>
     <ul class="navbar-nav">
       <li><a href="/" class="active">Upload</a></li>
-      <li><a href="/dashboard" id="nav-dashboard">Dashboard</a></li>
+      <li><a href="/dashboard.html" id="nav-dashboard">Dashboard</a></li>
     </ul>
   </nav>
 
@@ -208,7 +208,7 @@
         const result = await res.json();
         progressLabel.textContent = `✅ Found ${result.funds} funds, ${result.transactions} transactions!`;
         await new Promise(r => setTimeout(r, 1000));
-        window.location.href = '/dashboard';
+        window.location.href = '/dashboard.html';
       } catch (err) {
         progressCard.style.display = 'none';
         uploadCard.style.display = 'block';
