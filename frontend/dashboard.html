@@ -804,6 +804,52 @@
                 </div>
             </div>
 
+            <!-- Fundamentals Grid -->
+            <h3 class="fm-section-title">📊 Fundamentals</h3>
+            <div style="overflow-x:auto;margin-bottom:22px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Measures</th>
+                            <th>Fund</th>
+                            <th>Category Average</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>PE</td>
+                            <td class="success" id="fm-pe">—</td>
+                            <td class="success" id="fm-cat-pe">—</td>
+                        </tr>
+                        <tr>
+                            <td>PB</td>
+                            <td class="success" id="fm-pb">—</td>
+                            <td class="success" id="fm-cat-pb">—</td>
+                        </tr>
+                        <tr>
+                            <td>Price/Sale</td>
+                            <td class="success" id="fm-ps">—</td>
+                            <td class="success" id="fm-cat-ps">—</td>
+                        </tr>
+                        <tr>
+                            <td>Price/Cash Flow</td>
+                            <td class="success" id="fm-pcf">—</td>
+                            <td class="success" id="fm-cat-pcf">—</td>
+                        </tr>
+                        <tr>
+                            <td>Dividend Yield</td>
+                            <td class="success" id="fm-dy">—</td>
+                            <td class="success" id="fm-cat-dy">—</td>
+                        </tr>
+                        <tr>
+                            <td>Sales Growth</td>
+                            <td id="fm-sg">—</td>
+                            <td id="fm-cat-sg">—</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
             <!-- ② Quantitative Metrics Grid -->
             <h3 class="fm-section-title">📐 Quantitative Indicators</h3>
             <div
@@ -963,7 +1009,7 @@
                     document.getElementById('loading-overlay').style.display = 'none';
                     return;
                 }
-                
+
                 await Promise.all([loadSummary(), loadHoldings(), loadAllocation(), loadGrowth(), loadTransactions()]);
                 el('dashboard-root').style.opacity = '1';
                 el('dashboard-root').style.transition = 'opacity 0.4s';
@@ -1876,6 +1922,15 @@
                 el('fm-benchmark').textContent = d.benchmark || '—';
 
                 const fmtCr = v => v != null ? `₹${(+v).toLocaleString('en-IN')} Cr` : 'N/A';
+                const f = d.fundamentals || {};
+                el('fm-ps').textContent = f.price_sale || 'N/A';
+                el('fm-cat-ps').textContent = f.cat_avg_price_sale || 'N/A';
+                el('fm-pcf').textContent = f.price_cash_flow || 'N/A';
+                el('fm-cat-pcf').textContent = f.cat_avg_price_cash_flow || 'N/A';
+                el('fm-dy').textContent = f.dividend_yield != null ? `${f.dividend_yield}%` : 'N/A';
+                el('fm-cat-dy').textContent = f.cat_avg_dividend_yield != null ? `${f.cat_avg_dividend_yield}%` : 'N/A';
+                el('fm-sg').textContent = f.roe != null ? `${f.roe}%` : 'N/A';
+                el('fm-cat-sg').textContent = f.cat_avg_roe != null ? `${f.cat_avg_roe}%` : 'N/A';
                 el('fm-aum').textContent = fmtCr(d.aum_cr);
                 el('fm-nav').textContent = d.current_nav != null ? `₹${(+d.current_nav).toFixed(4)}` + (d.nav_date ? ` (${d.nav_date})` : '') : 'N/A';
                 el('fm-expense').textContent = d.expense_ratio != null ? `${d.expense_ratio}%` : 'N/A';

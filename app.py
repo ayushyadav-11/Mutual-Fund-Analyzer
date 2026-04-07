@@ -981,6 +981,7 @@ async def get_fund_details(isin: str):
         "current_nav":        mfapi_data["current_nav"],
         "nav_date":           mfapi_data["nav_date"],
         "portfolio_turnover": portfolio_turnover,
+        "fundamentals":       fundms,
         "risk":               risk_data,
         "returns":            returns_data,
         "fund_trailing":      returns_data,

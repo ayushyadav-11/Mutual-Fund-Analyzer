@@ -69,4 +69,15 @@ class MoneyControlScraper:
 
     def get_fundamentals(self, isin: str) -> Dict[str, Any]:
         """Basic fund metrics like AUM, expense ratio from MC."""
-        return self._fetch_mc_data("fundamentals", isin) or {}
+        # Also fetch snapshot values
+        snap = self._fetch_mc_data("fundamentals", isin) or {}
+        return {
+            "price_sale": snap.get("price_sale"),
+            "cat_avg_price_sale": snap.get("cat_avg_price_sale"),
+            "price_cash_flow": snap.get("price_cash_flow"),
+            "cat_avg_price_cash_flow": snap.get("cat_avg_price_cash_flow"),
+            "dividend_yield": snap.get("dividend_yield"),
+            "cat_avg_dividend_yield": snap.get("cat_avg_dividend_yield"),
+            "roe": snap.get("roe"),
+            "cat_avg_roe": snap.get("cat_avg_roe")
+        }

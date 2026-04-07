@@ -120,6 +120,14 @@ def initialize_database():
             expense_ratio REAL,
             exit_load TEXT,
             portfolio_turnover REAL,
+            price_sale TEXT,
+            cat_avg_price_sale TEXT,
+            price_cash_flow TEXT,
+            cat_avg_price_cash_flow TEXT,
+            dividend_yield TEXT,
+            cat_avg_dividend_yield TEXT,
+            roe TEXT,
+            cat_avg_roe TEXT,
             last_updated_at TIMESTAMP,
             FOREIGN KEY (isin) REFERENCES schemes (isin) ON DELETE CASCADE
         )
@@ -258,15 +266,28 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
     try:
         # 1. Fundamentals
         c.execute('''
-            INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, last_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, price_sale, cat_avg_price_sale, price_cash_flow, cat_avg_price_cash_flow, dividend_yield, cat_avg_dividend_yield, roe, cat_avg_roe, last_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(isin) DO UPDATE SET
                 aum_cr=excluded.aum_cr,
                 expense_ratio=excluded.expense_ratio,
                 exit_load=excluded.exit_load,
                 portfolio_turnover=excluded.portfolio_turnover,
+                price_sale=excluded.price_sale,
+                cat_avg_price_sale=excluded.cat_avg_price_sale,
+                price_cash_flow=excluded.price_cash_flow,
+                cat_avg_price_cash_flow=excluded.cat_avg_price_cash_flow,
+                dividend_yield=excluded.dividend_yield,
+                cat_avg_dividend_yield=excluded.cat_avg_dividend_yield,
+                roe=excluded.roe,
+                cat_avg_roe=excluded.cat_avg_roe,
                 last_updated_at=excluded.last_updated_at
-        ''', (isin, fundamentals.get("aum_cr"), fundamentals.get("expense_ratio"), fundamentals.get("exit_load"), fundamentals.get("portfolio_turnover"), now))
+        ''', (
+            isin, fundamentals.get("aum_cr"), fundamentals.get("expense_ratio"), fundamentals.get("exit_load"), fundamentals.get("portfolio_turnover"),
+            fundamentals.get("price_sale"), fundamentals.get("cat_avg_price_sale"), fundamentals.get("price_cash_flow"), fundamentals.get("cat_avg_price_cash_flow"),
+            fundamentals.get("dividend_yield"), fundamentals.get("cat_avg_dividend_yield"), fundamentals.get("roe"), fundamentals.get("cat_avg_roe"),
+            now
+        ))
         
         # 2. Risk
         c.execute('''
