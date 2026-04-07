@@ -61,10 +61,22 @@ class AgnosticConnection:
 def get_connection():
     """Returns an agnostic connection instance wrapping SQLite or Postgres perfectly."""
     if USE_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL)
+        # Supabase/Render often require sslmode=require if connecting from external apps
+        db_url = DATABASE_URL
+        if "?" not in db_url:
+            db_url += "?sslmode=require"
+        elif "sslmode" not in db_url:
+            db_url += "&sslmode=require"
+            
+        try:
+            conn = psycopg2.connect(db_url)
+        except Exception as e:
+            logger.error(f"FATAL: psycopg2 failed to connect to Postgres! URL: {db_url.split('@')[-1]} Error: {str(e)}")
+            raise e
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
+        
     return AgnosticConnection(conn)
 
 def initialize_database():
