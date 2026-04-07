@@ -142,6 +142,15 @@ def initialize_database():
         )
     ''')
     
+    # Session Persistence Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS portfolio_sessions (
+            id TEXT PRIMARY KEY,
+            session_data TEXT NOT NULL,
+            last_updated TIMESTAMP
+        )
+    ''')
+    
     # Fund Holdings
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fund_holdings (
@@ -359,6 +368,37 @@ def get_cached_fund_deep_dive(isin: str, max_age_hours=1) -> Optional[dict]:
     
     conn.close()
     return result
+
+def get_portfolio_session(session_id: str = "master") -> Optional[str]:
+    """Retrieve raw JSON session data from the database."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT session_data FROM portfolio_sessions WHERE id = ?', (session_id,))
+    row = c.fetchone()
+    conn.close()
+    return row['session_data'] if row else None
+
+def save_portfolio_session(data_json: str, session_id: str = "master"):
+    """Persists raw JSON session payload to the database."""
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        # standard upsert logic independent of Postgres JSONB / SQLite limitations
+        c.execute('SELECT id FROM portfolio_sessions WHERE id = ?', (session_id,))
+        if c.fetchone():
+            c.execute('UPDATE portfolio_sessions SET session_data = ?, last_updated = ? WHERE id = ?', 
+                      (data_json, now, session_id))
+        else:
+            c.execute('INSERT INTO portfolio_sessions (id, session_data, last_updated) VALUES (?, ?, ?)', 
+                      (session_id, data_json, now))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to save portfolio session: {e}")
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

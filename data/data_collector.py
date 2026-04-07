@@ -1,110 +1,115 @@
 import httpx
-import logging
 import asyncio
+import logging
 from datetime import datetime
-from data.database import insert_or_update_scheme, batch_insert_navs
+from data.database import insert_or_update_scheme, batch_insert_navs, get_nav_series
 from core.parser import get_benchmark_ticker
 
 logger = logging.getLogger(__name__)
 
-async def fetch_and_populate_mfapi_data(holdings: list):
-    """
-    Operates identically to the legacy memory-cache function,
-    but commits explicitly the chronological outputs natively to the SQLite engine.
-    """
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        # First query: search for the scheme code via MFAPI endpoint
-        for h in holdings:
-            isin = h.get('isin')
-            name = h.get('name')
-            units = h.get("units", 0)
-            
-            if not isin or units < 0.001:
-                continue
+MFAPI_SEARCH = "https://api.mfapi.in/mf/search?q={}"
+MFAPI_HIST   = "https://api.mfapi.in/mf/{}"
 
-            # Ensure fund exists in DB
-            benchmark = get_benchmark_ticker(name, h.get("category", ""))
-            insert_or_update_scheme(
-                isin=isin, 
-                scheme_name=name,
-                category=h.get('category'),
-                benchmark=benchmark
-            )
-            
-        # First, grab the master scheme list to map ISIN -> Scheme Code accurately
-        try:
-            res_master = await client.get("https://api.mfapi.in/mf")
-            if res_master.status_code == 200:
-                master = res_master.json()
-                isin_to_code = {}
-                for entry in master:
-                    code = entry.get("schemeCode")
-                    ig = entry.get("isinGrowth")
-                    if ig: isin_to_code[ig] = code
-                    idiv = entry.get("isinDivReinvestment")
-                    if idiv: isin_to_code[idiv] = code
-            else:
-                logger.error("Failed to load mfapi master list")
-                return
-        except Exception as e:
-            logger.error(f"Error fetching master list: {e}")
+
+async def _resolve_scheme_code(client: httpx.AsyncClient, isin: str, name: str) -> int | None:
+    """
+    Search MFAPI by fund name and return the schemeCode whose isinGrowth /
+    isinDivReinvestment matches our ISIN.  Falls back to the first result if
+    no ISIN match is found (works for most schemes).
+    """
+    query = name[:40]                     # keep query short but specific
+    try:
+        r = await client.get(MFAPI_SEARCH.format(httpx.URL(query)), timeout=10.0)
+        if r.status_code != 200:
+            return None
+        results = r.json()
+        if not results:
+            return None
+        for entry in results:
+            ig   = entry.get("isinGrowth", "")
+            idiv = entry.get("isinDivReinvestment", "")
+            if isin in (ig, idiv):
+                return entry["schemeCode"]
+        # Fallback: first result (usually correct for unique fund names)
+        return results[0]["schemeCode"]
+    except Exception as e:
+        logger.warning(f"MFAPI search failed for '{name}': {e}")
+        return None
+
+
+async def _ingest_fund(client: httpx.AsyncClient, holding: dict, semaphore: asyncio.Semaphore):
+    """Fetch + store historical NAV for a single holding."""
+    isin  = holding.get("isin", "")
+    name  = holding.get("name", "Unknown")
+    units = holding.get("units", 0)
+
+    if not isin or units < 0.001:
+        return
+
+    # Register the scheme in DB
+    benchmark = get_benchmark_ticker(name, holding.get("category", ""))
+    insert_or_update_scheme(isin=isin, scheme_name=name,
+                            category=holding.get("category"),
+                            benchmark=benchmark)
+
+    # Skip if we already have fresh NAV data (> 100 rows)
+    existing = get_nav_series(isin)
+    if existing and len(existing) > 100:
+        logger.debug(f"NAV data already present for {name} ({isin}), skipping.")
+        return
+
+    async with semaphore:
+        code = await _resolve_scheme_code(client, isin, name)
+        if not code:
+            logger.warning(f"Could not resolve scheme code for {name} ({isin})")
             return
 
-        for h in holdings:
-            isin = h.get('isin')
-            name = h.get('name')
-            units = h.get("units", 0)
-            
-            if not isin or units < 0.001:
-                continue
+        insert_or_update_scheme(isin, name, scheme_code=code)
 
-            # Ensure fund exists in DB
-            benchmark = get_benchmark_ticker(name, h.get("category", ""))
-            insert_or_update_scheme(
-                isin=isin, 
-                scheme_name=name,
-                category=h.get('category'),
-                benchmark=benchmark
-            )
-            
-            scheme_code = isin_to_code.get(isin)
-            if scheme_code:
+        try:
+            r = await client.get(MFAPI_HIST.format(code), timeout=20.0)
+            if r.status_code != 200:
+                return
+            raw = r.json().get("data", [])
+            nav_records = []
+            for point in raw:
                 try:
-                    insert_or_update_scheme(isin, name, scheme_code=scheme_code)
-                    
-                    # Phase 2: Rip exact historical NAV timeline
-                    history_url = f"https://api.mfapi.in/mf/{scheme_code}"
-                    h_res = await client.get(history_url)
-                    if h_res.status_code == 200:
-                        h_data = h_res.json()
-                        raw_data = h_data.get("data", [])
-                        
-                        # Convert parsed DD-MM-YYYY to canonical YYYY-MM-DD for mathematically solid SQL indexing
-                        nav_records = []
-                        for point in raw_data:
-                            try:
-                                # mfapi format: dd-mm-yyyy
-                                dt = datetime.strptime(point["date"], "%d-%m-%Y")
-                                canonical_date = dt.strftime("%Y-%m-%d")
-                                nav_records.append({
-                                    "date": canonical_date, 
-                                    "nav": float(point["nav"])
-                                })
-                            except Exception:
-                                pass
-                                
-                        batch_insert_navs(isin, nav_records)
-                        logger.info(f"Ingested {len(nav_records)} historical NAV traces into SQLite for {name} ({isin})")
-                except Exception as e:
-                    logger.error(f"Ingestion failed for {name}: {e}")
+                    dt = datetime.strptime(point["date"], "%d-%m-%Y")
+                    nav_records.append({"date": dt.strftime("%Y-%m-%d"),
+                                        "nav": float(point["nav"])})
+                except Exception:
+                    pass
+
+            batch_insert_navs(isin, nav_records)
+            logger.info(f"Ingested {len(nav_records)} NAV records for {name} ({isin})")
+        except Exception as e:
+            logger.error(f"NAV ingestion failed for {name}: {e}")
+
+
+async def fetch_and_populate_mfapi_data(holdings: list):
+    """
+    Called by /api/risk on startup.  Concurrently resolves scheme codes via
+    MFAPI search (avoids the broken /mf master-list endpoint) and stores
+    historical NAVs in SQLite/Postgres.
+    """
+    semaphore = asyncio.Semaphore(5)        # max 5 concurrent requests
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        tasks = [_ingest_fund(client, h, semaphore) for h in holdings]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 if __name__ == "__main__":
-    import json
+    import json, sys
     logging.basicConfig(level=logging.INFO)
-    
-    # Test execution over the user's specific session cache
-    with open('session_data.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    print("Initiating full SQLite data cascade from MFAPI...")
-    asyncio.run(fetch_and_populate_mfapi_data(data.get('holdings', [])))
-    print("Data Ingestion Concluded Successfully.")
+
+    try:
+        with open("session_data.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print("session_data.json not found – trying database…")
+        from core.parser import load_session
+        data = load_session()
+
+    print("Ingesting historical NAVs from MFAPI…")
+    asyncio.run(fetch_and_populate_mfapi_data(data.get("holdings", [])))
+    print("Done.")

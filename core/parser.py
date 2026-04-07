@@ -372,13 +372,16 @@ def _build_cashflows(transactions: list, current_units: float, live_nav: float =
 
 
 def save_session(data: dict, filepath: str = 'session_data.json', merge: bool = False):
-    """Save parsed data to JSON file. If merge=True, combine with existing data."""
-    if merge and os.path.exists(filepath):
-        # Load existing data to merge
+    """Save parsed data to DB/JSON file. If merge=True, combine with existing data."""
+    existing_data = None
+    if merge:
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                existing_data = json.load(f)
-                
+            existing_data = load_session(filepath)
+        except Exception:
+            pass
+
+    if existing_data:
+        try:
             # Merge Investor info (keep a list of names if they differ)
             names = set()
             if "investor_info" in existing_data and "name" in existing_data["investor_info"]:
@@ -386,14 +389,13 @@ def save_session(data: dict, filepath: str = 'session_data.json', merge: bool = 
             if "investor_info" in data and "name" in data["investor_info"]:
                 names.add(data["investor_info"]["name"])
             
-            # Use combined name (e.g. "John Doe & Jane Doe")
             if names:
                 data["investor_info"] = data.get("investor_info", {})
                 data["investor_info"]["name"] = " & ".join(sorted(list(names)))
             
             # Merge Holdings
-            existing_holdings = {h["name"]: h for h in existing_data.get("holdings", [])}
-            new_holdings = {h["name"]: h for h in data.get("holdings", [])}
+            existing_holdings = {h.get("name"): h for h in existing_data.get("holdings", []) if h.get("name")}
+            new_holdings = {h.get("name"): h for h in data.get("holdings", []) if h.get("name")}
             
             merged_holdings = {}
             for name in set(existing_holdings.keys()).union(new_holdings.keys()):
@@ -401,10 +403,7 @@ def save_session(data: dict, filepath: str = 'session_data.json', merge: bool = 
                 h2 = new_holdings.get(name)
                 
                 if h1 and h2:
-                    # Fund exists in both, merge units and average the nav/cost
                     units = h1["units"] + h2["units"]
-                    
-                    # Approximate mixed cost (weighted avg)
                     val1 = h1["units"] * h1.get("nav", 0)
                     val2 = h2["units"] * h2.get("nav", 0)
                     nav = (val1 + val2) / units if units > 0 else h1.get("nav", 0)
@@ -428,14 +427,11 @@ def save_session(data: dict, filepath: str = 'session_data.json', merge: bool = 
             # Merge Transactions
             existing_txns = existing_data.get("transactions", [])
             new_txns = data.get("transactions", [])
-            
-            # Combine and deduplicate exact matches
             all_txns = existing_txns + new_txns
             unique_txns = []
             seen = set()
             
             for t in all_txns:
-                # Create a characteristic signature to avoid duplicates
                 sig = f"{t.get('date')}_{t.get('scheme_name')}_{t.get('type')}_{t.get('amount')}_{t.get('units')}"
                 if sig not in seen:
                     seen.add(sig)
@@ -445,14 +441,56 @@ def save_session(data: dict, filepath: str = 'session_data.json', merge: bool = 
             
         except Exception as e:
             print(f"Error merging session data: {e}. Overwriting instead.")
-            
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4)
+
+    # Always write to disk (keeps local dev in sync)
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Failed to write session to disk: {e}")
+
+    # Always write to DB (keeps Render/cloud in sync)
+    try:
+        from data.database import save_portfolio_session
+        save_portfolio_session(json.dumps(data))
+    except Exception as e:
+        print(f"Failed to save session to database: {e}")
 
 
 def load_session(filepath: str = 'session_data.json') -> Optional[dict]:
-    """Load previously parsed CAS session from disk."""
+    """Load previously parsed CAS session.
+    Priority:
+      1. Local disk file (present in dev; freshest copy).
+      2. Database (Supabase/SQLite — used on Render where disk is wiped).
+    Whenever a disk file is successfully read, it is also written to the DB
+    so that the cloud copy stays in sync.
+    """
+    # ── 1. Disk (local dev / file still present) ──────────────────────────────
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Sync this to DB so Render always has the latest copy
+            try:
+                from data.database import save_portfolio_session
+                save_portfolio_session(json.dumps(data))
+            except Exception:
+                pass
+            return data
+        except Exception:
+            pass  # fall through to DB
+
+    # ── 2. Database (Render / disk wiped) ─────────────────────────────────────
+    try:
+        from data.database import get_portfolio_session
+        db_data = get_portfolio_session()
+        if db_data:
+            return json.loads(db_data)
+    except Exception:
+        pass
+
     if not os.path.exists(filepath):
         raise FileNotFoundError("No parsed CAS data found. Please upload your CAS PDF first.")
+        
     with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)

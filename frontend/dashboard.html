@@ -969,7 +969,7 @@
                 el('dashboard-root').style.transition = 'opacity 0.4s';
             } catch (e) {
                 console.warn(e.message);
-                if (e.message.includes('404')) {
+                if (e.message.includes('404') || e.message.includes('No portfolio data found') || e.message.includes('upload your CAS PDF')) {
                     window.location.href = '/';
                 } else if (e.message.includes('Unauthorized')) {
                     // Only show login modal if it's explicitly an auth failure
