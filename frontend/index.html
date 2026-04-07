@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MF Analyzer — Upload CAS PDF</title>
+  <meta name="description" content="Upload your CAMS/KFintech Consolidated Account Statement PDF to analyze your mutual fund portfolio with full risk analytics." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">
+      <div class="logo-icon">📊</div>
+      <span>MF Analyzer</span>
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="active">Upload</a></li>
+      <li><a href="/dashboard" id="nav-dashboard">Dashboard</a></li>
+    </ul>
+  </nav>
+
+  <main class="page">
+    <section class="upload-hero">
+      <div class="upload-container">
+        <div class="upload-badge">🔒 Your data never leaves your device</div>
+        <h1>Mutual Fund<br/>Portfolio Analyzer</h1>
+        <p>Upload your CAS PDF from CAMS or KFintech to get instant<br/>portfolio analytics, XIRR, and risk metrics.</p>
+
+        <!-- Upload Card -->
+        <div class="card upload-card" id="upload-card">
+          <div class="dropzone" id="dropzone">
+            <span class="drop-icon">📄</span>
+            <h3>Drop your CAS PDF here</h3>
+            <p>or click to browse • PDF files only</p>
+            <input type="file" id="pdf-input" accept=".pdf" />
+          </div>
+
+          <div class="file-selected" id="file-selected" style="display:none;">
+            <span class="file-selected-icon">✅</span>
+            <div>
+              <div class="file-selected-name" id="file-name-label"></div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">Ready to upload</div>
+            </div>
+          </div>
+
+          <div class="password-group">
+            <label for="cas-password">CAS Password (if password-protected)</label>
+            <div class="input-wrap">
+              <input
+                type="password"
+                id="cas-password"
+                placeholder="e.g. pan1234 + ddmmyyyy"
+                autocomplete="off"
+              />
+              <button class="eye-btn" id="eye-btn" type="button" title="Toggle visibility">👁️</button>
+            </div>
+            <p class="hint">
+              CAMS CAS password format: <strong>PAN in lowercase</strong> + <strong>date of birth (ddmmyyyy)</strong><br/>
+              Example: <code style="color:var(--accent-light);">abcde1234f01011990</code>
+            </p>
+          </div>
+
+          <div class="merge-option" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:15px;">
+            <input type="checkbox" id="mergePortfolio" title="Combine this PDF with already loaded portfolio data">
+            <label for="mergePortfolio" style="font-size:0.9rem;color:var(--text-secondary);cursor:pointer;" title="Combine this PDF with already loaded portfolio data">
+                Merge with existing session (Family View)
+            </label>
+          </div>
+
+          <button class="btn btn-primary upload-submit" id="upload-btn" disabled>
+            <span>🚀</span> Analyze Portfolio
+          </button>
+        </div>
+
+        <!-- Progress Overlay (shown while parsing) -->
+        <div class="card" id="progress-card" style="display:none;padding:40px;">
+          <div class="progress-overlay active">
+            <div class="spinner"></div>
+            <p class="progress-label" id="progress-label">Parsing your CAS PDF…</p>
+            <p style="font-size:0.8rem;color:var(--text-muted);">This usually takes 5–15 seconds</p>
+          </div>
+        </div>
+
+        <!-- Info tiles -->
+        <div class="info-grid">
+          <div class="card info-tile">
+            <div class="icon">🔐</div>
+            <h4>100% Private</h4>
+            <p>PDF is parsed locally on your server. Nothing is sent to third parties.</p>
+          </div>
+          <div class="card info-tile">
+            <div class="icon">📥</div>
+            <h4>Get CAS PDF</h4>
+            <p>Request from <a href="https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement" target="_blank" style="color:var(--accent-light);">CAMS</a> or <a href="https://mfs.kfintech.com" target="_blank" style="color:var(--accent-light);">KFintech</a> via email.</p>
+          </div>
+          <div class="card info-tile">
+            <div class="icon">📊</div>
+            <h4>Full Analytics</h4>
+            <p>XIRR, Sharpe, Sortino, Beta, Max Drawdown, Allocation charts.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast error -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const pdfInput = document.getElementById('pdf-input');
+    const fileSelected = document.getElementById('file-selected');
+    const fileNameLabel = document.getElementById('file-name-label');
+    const uploadBtn = document.getElementById('upload-btn');
+    const uploadCard = document.getElementById('upload-card');
+    const progressCard = document.getElementById('progress-card');
+    const progressLabel = document.getElementById('progress-label');
+    const eyeBtn = document.getElementById('eye-btn');
+    const passwordInput = document.getElementById('cas-password');
+    const mergePortfolioCheckbox = document.getElementById('mergePortfolio');
+    const toast = document.getElementById('toast');
+
+    let selectedFile = null;
+
+    // Drag & drop
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (files.length) handleFile(files[0]);
+    });
+
+    pdfInput.addEventListener('change', () => {
+      if (pdfInput.files.length) handleFile(pdfInput.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        showToast('Please select a PDF file.');
+        return;
+      }
+      selectedFile = file;
+      fileNameLabel.textContent = file.name;
+      fileSelected.style.display = 'flex';
+      uploadBtn.disabled = false;
+    }
+
+    // Password eye toggle
+    eyeBtn.addEventListener('click', () => {
+      passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+    });
+
+    // Upload & parse
+    uploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      uploadCard.style.display = 'none';
+      progressCard.style.display = 'block';
+
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      fd.append('password', passwordInput.value || '');
+      fd.append('merge', mergePortfolioCheckbox.checked);
+
+      try {
+        const steps = [
+          'Parsing your CAS PDF…',
+          'Extracting tabular data…',
+          'Validating transactions…',
+          'Calculating XIRR…',
+          'Almost done…',
+        ];
+        let step = 0;
+        const stepInterval = setInterval(() => {
+          if (step < steps.length - 1) step++;
+          progressLabel.textContent = steps[step];
+        }, 3000);
+
+        const res = await fetch('/api/parse', { method: 'POST', body: fd });
+        clearInterval(stepInterval);
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Parsing failed');
+        }
+
+        const result = await res.json();
+        progressLabel.textContent = `✅ Found ${result.funds} funds, ${result.transactions} transactions!`;
+        await new Promise(r => setTimeout(r, 1000));
+        window.location.href = '/dashboard';
+      } catch (err) {
+        progressCard.style.display = 'none';
+        uploadCard.style.display = 'block';
+        showToast('❌ ' + err.message);
+      }
+    });
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 5000);
+    }
+  </script>
+</body>
+</html>

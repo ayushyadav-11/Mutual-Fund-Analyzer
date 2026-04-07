@@ -47,8 +47,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MASTER_PASSWORD = os.getenv("MASTER_PASSWORD", "admin123")
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Exclude frontend root and login endpoints from auth logic
+        if request.method == "OPTIONS" or request.url.path in ["/", "/api/login", "/favicon.ico"]:
+            return await call_next(request)
+        
+        # Guard internal API routes
+        if request.url.path.startswith("/api/"):
+            # Check Bearer Token
+            auth_header = request.headers.get("Authorization")
+            if not auth_header or auth_header != f"Bearer {MASTER_PASSWORD}":
+                return JSONResponse(status_code=401, content={"detail": "Unauthorized access. Please login."})
+                
+        return await call_next(request)
+
+app.add_middleware(AuthMiddleware)
+
+class LoginRequest(BaseModel):
+    password: str
+
+@app.post("/api/login")
+async def login(req: LoginRequest):
+    if req.password == MASTER_PASSWORD:
+        return {"token": MASTER_PASSWORD, "message": "Authenticated successfully"}
+    raise HTTPException(status_code=401, detail="Incorrect password")
+
 # Session file location (persists between requests)
 SESSION_FILE = os.path.join(os.path.dirname(__file__), "session_data.json")
+
+# In-memory cache for Yahoo Finance benchmark series
+_benchmark_cache = {}
 
 
 # ── MFAPI Live NAV Fetcher ───────────────────────────────────────────────────
@@ -485,7 +520,6 @@ async def get_overlap(refresh: bool = False):
 
     async def _fetch(h: dict):
         fn = h["name"]
-        amc = guess_amc(fn)
         mstar_fund = await asyncio.get_event_loop().run_in_executor(
             None, _scraper.search_fund, fn
         )
@@ -503,7 +537,9 @@ async def get_overlap(refresh: bool = False):
         else:
             raw_holdings_map[fn] = {}
 
-    await asyncio.gather(*(_fetch(h) for h in equity_holdings))
+    for h in equity_holdings:
+        await _fetch(h)
+        await asyncio.sleep(0.3)
 
     result = compute_overlap(raw_holdings_map)
 
@@ -673,7 +709,7 @@ async def get_dividends():
 async def get_fund_details(isin: str):
     """Return fund details using Moneycontrol for metrics and Morningstar for portfolio composition."""
     import sqlite3
-    from data.database import get_nav_series, DB_PATH
+    from data.database import get_nav_series, DB_PATH, get_cached_fund_deep_dive, cache_fund_deep_dive
 
     # ── 1. Base Scheme from DB ─────────────────────────────────────────────────
     conn = sqlite3.connect(DB_PATH)
@@ -703,76 +739,116 @@ async def get_fund_details(isin: str):
     except Exception:
         session_data = None
 
-    # ── 2. Moneycontrol Fetching ──────────────────────────────────────────────
-    from scrapers.morningstar import MorningstarScraper
-    from scrapers.moneycontrol import MoneyControlScraper
-    ms = MorningstarScraper()
-    mc = MoneyControlScraper()
-    loop = asyncio.get_event_loop()
-    ms_fund, mc_risk, mc_perf, mc_fund = await asyncio.gather(
-        loop.run_in_executor(None, ms.search_fund, scheme_name),
-        loop.run_in_executor(None, mc.get_risk_metrics, isin),
-        loop.run_in_executor(None, mc.get_performance, isin),
-        loop.run_in_executor(None, mc.get_fundamentals, isin),
-    )
+    # ── 2. Check SQLite Cache (1-Hour Expiration) ─────────────────────────────
+    cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
+    
+    if cached_fund:
+        fallback_benchmark = cached_fund.get("risk", {}).get("benchmark_name") or scheme["benchmark"]
+        risk_data = cached_fund.get("risk", {})
+        returns_data = cached_fund.get("returns", {})
+        benchmark_returns = cached_fund.get("benchmark_cagr", {})
+        sorted_holdings = cached_fund.get("holdings", [])
+        sector_allocation = cached_fund.get("sectors", [])
+        
+        fundms = cached_fund.get("fundamentals", {})
+        mfapi_data = {
+            "aum_cr": fundms.get("aum_cr"),
+            "expense_ratio": fundms.get("expense_ratio"),
+            "exit_load": fundms.get("exit_load"),
+            "current_nav": None,
+            "nav_date": None,
+        }
+        portfolio_turnover = fundms.get("portfolio_turnover")
 
-    fallback_benchmark = (
-        _mc_find_first(mc_perf, "benchmark_name", "benchmark", "benchmarklabel")
-        or _mc_find_first(mc_risk, "benchmark_name", "benchmark", "benchmarklabel")
-        or scheme["benchmark"]
-    )
-    risk_data = _mc_extract_risk(mc_risk, fallback_benchmark)
-    returns_data, benchmark_returns = _mc_extract_period_returns(mc_perf)
-    if all(val is None for val in returns_data.values()):
-        returns_data, fallback_benchmark_returns = _mc_extract_period_returns(mc_risk)
-        for key, value in benchmark_returns.items():
-            if value is None:
-                benchmark_returns[key] = fallback_benchmark_returns.get(key)
-    if mc_risk and all(value is None for key, value in risk_data.items() if key != "benchmark_name"):
-        logger.warning(
-            "Moneycontrol risk payload parsed empty for %s. Top-level keys: %s. Periods: %s. Sharpe sample: %s",
-            isin,
-            list(mc_risk.keys())[:20] if isinstance(mc_risk, dict) else type(mc_risk).__name__,
-            mc_risk.get("period") if isinstance(mc_risk, dict) else None,
-            mc_risk.get("sharpe_ratio") if isinstance(mc_risk, dict) else None,
+    else:
+        # ── 3. Moneycontrol & Morningstar Fetching (Cache Miss) ──────────────────
+        from scrapers.morningstar import MorningstarScraper
+        from scrapers.moneycontrol import MoneyControlScraper
+        ms = MorningstarScraper()
+        mc = MoneyControlScraper()
+        loop = asyncio.get_event_loop()
+        ms_fund, mc_risk, mc_perf, mc_fund = await asyncio.gather(
+            loop.run_in_executor(None, ms.search_fund, scheme_name),
+            loop.run_in_executor(None, mc.get_risk_metrics, isin),
+            loop.run_in_executor(None, mc.get_performance, isin),
+            loop.run_in_executor(None, mc.get_fundamentals, isin),
         )
-    if mc_perf and all(value is None for value in returns_data.values()):
-        logger.warning("Moneycontrol performance payload parsed empty for %s. Top-level keys: %s", isin, list(mc_perf.keys())[:20] if isinstance(mc_perf, dict) else type(mc_perf).__name__)
+    
+        # ── 4. Process Deep Dive Data ────────────────────────────────────────────────
+        # Merge performance and risk return streams to combat MC API zeroing anomalies (0.00%)
+        returns_data, benchmark_returns = _mc_extract_period_returns(mc_perf)
+        risk_returns, fallback_benchmark = _mc_extract_period_returns(mc_risk)
+        
+        for k in returns_data:
+            if returns_data.get(k) in (0.0, None) and risk_returns.get(k) not in (0.0, None):
+                returns_data[k] = risk_returns[k]
+                
+        for k in benchmark_returns:
+            if benchmark_returns.get(k) in (0.0, None) and fallback_benchmark.get(k) not in (0.0, None):
+                benchmark_returns[k] = fallback_benchmark[k]
 
-    mc_fundamentals = _mc_extract_fundamentals(mc_fund)
-    sorted_holdings: list[dict] = []
-    sector_allocation: list = []
-    portfolio_turnover: Optional[float] = mc_fundamentals["portfolio_turnover"]
-
-    if ms_fund:
-        try:
-            ms_id = ms_fund["id"]
-            raw_portfolio, fund_info = await asyncio.gather(
-                loop.run_in_executor(None, ms.get_portfolio, ms_id),
-                loop.run_in_executor(None, ms.get_fund_info, ms_id),
+        fallback_benchmark_name = (
+            _mc_find_first(mc_perf, "benchmark_name", "benchmark", "benchmarklabel")
+            or _mc_find_first(mc_risk, "benchmark_name", "benchmark", "benchmarklabel")
+            or scheme["benchmark"]
+        )
+        risk_data = _mc_extract_risk(mc_risk, fallback_benchmark_name)
+        if mc_risk and all(value is None for key, value in risk_data.items() if key != "benchmark_name"):
+            logger.warning(
+                "Moneycontrol risk payload parsed empty for %s. Top-level keys: %s. Periods: %s. Sharpe sample: %s",
+                isin,
+                list(mc_risk.keys())[:20] if isinstance(mc_risk, dict) else type(mc_risk).__name__,
+                mc_risk.get("period") if isinstance(mc_risk, dict) else None,
+                mc_risk.get("sharpe_ratio") if isinstance(mc_risk, dict) else None,
             )
-            sorted_holdings = [
-                {"asset": asset, "weight": round(weight * 100, 2)}
-                for asset, weight in sorted(raw_portfolio.items(), key=lambda item: item[1], reverse=True)
-            ][:20]
-            sector_allocation = fund_info.get("sector_allocation", []) or []
-            if mc_fundamentals["aum_cr"] is None:
-                mc_fundamentals["aum_cr"] = fund_info.get("aum_cr")
-            if mc_fundamentals["expense_ratio"] is None:
-                mc_fundamentals["expense_ratio"] = fund_info.get("expense_ratio")
-            if portfolio_turnover is None:
-                portfolio_turnover = fund_info.get("portfolio_turnover_pct")
-        except Exception:
-            pass
+        if mc_perf and all(value is None for value in returns_data.values()):
+            logger.warning("Moneycontrol performance payload parsed empty for %s. Top-level keys: %s", isin, list(mc_perf.keys())[:20] if isinstance(mc_perf, dict) else type(mc_perf).__name__)
+    
+        mc_fundamentals = _mc_extract_fundamentals(mc_fund)
+        sorted_holdings: list[dict] = []
+        sector_allocation: list = []
+        portfolio_turnover: Optional[float] = mc_fundamentals["portfolio_turnover"]
+    
+        if ms_fund:
+            try:
+                ms_id = ms_fund["id"]
+                raw_portfolio, fund_info = await asyncio.gather(
+                    loop.run_in_executor(None, ms.get_portfolio, ms_id),
+                    loop.run_in_executor(None, ms.get_fund_info, ms_id),
+                )
+                sorted_holdings = [
+                    {"asset": asset, "weight": round(weight * 100, 2)}
+                    for asset, weight in sorted(raw_portfolio.items(), key=lambda item: item[1], reverse=True)
+                ][:20]
+                sector_allocation = fund_info.get("sector_allocation", []) or []
+                if mc_fundamentals["aum_cr"] is None:
+                    mc_fundamentals["aum_cr"] = fund_info.get("aum_cr")
+                if mc_fundamentals["expense_ratio"] is None:
+                    mc_fundamentals["expense_ratio"] = fund_info.get("expense_ratio")
+                if portfolio_turnover is None:
+                    portfolio_turnover = fund_info.get("portfolio_turnover_pct")
+            except Exception:
+                pass
+                
+        mfapi_data = {
+            "aum_cr": mc_fundamentals["aum_cr"],
+            "expense_ratio": mc_fundamentals["expense_ratio"],
+            "exit_load": mc_fundamentals["exit_load"],
+            "current_nav": None,
+            "nav_date": None,
+        }
+        
+        # Save to Cache
+        cache_fund_deep_dive(
+            isin=isin,
+            fundamentals={"aum_cr": mfapi_data["aum_cr"], "expense_ratio": mfapi_data["expense_ratio"], "exit_load": mfapi_data["exit_load"], "portfolio_turnover": portfolio_turnover},
+            risk=risk_data,
+            returns=returns_data,
+            bench_returns=benchmark_returns,
+            holdings=sorted_holdings,
+            sectors=sector_allocation
+        )
 
-    # ── 3. NAV Fetch (kept separate from MC because it powers current valuation and XIRR) ───
-    mfapi_data = {
-        "aum_cr": mc_fundamentals["aum_cr"],
-        "expense_ratio": mc_fundamentals["expense_ratio"],
-        "exit_load": mc_fundamentals["exit_load"],
-        "current_nav": None,
-        "nav_date": None,
-    }
 
     try:
         if scheme_code:
@@ -818,11 +894,19 @@ async def get_fund_details(isin: str):
             sip_txns.sort(key=lambda x: x["date"])
 
             if sip_txns:
+                bench_start = (date.today() - timedelta(days=10 * 365)).strftime("%Y-%m-%d")
                 bench_end = date.today().strftime("%Y-%m-%d")
-                bench_s   = await asyncio.get_event_loop().run_in_executor(
-                    None, _fetch_benchmark_returns, benchmark_symbol,
-                    (date.today() - timedelta(days=10 * 365)).strftime("%Y-%m-%d"), bench_end
-                )
+                cache_key = f"{benchmark_symbol}_{bench_start}_{bench_end}"
+                
+                if cache_key in _benchmark_cache:
+                    bench_s = _benchmark_cache[cache_key]
+                else:
+                    bench_s = await asyncio.get_event_loop().run_in_executor(
+                        None, _fetch_benchmark_returns, benchmark_symbol,
+                        bench_start, bench_end
+                    )
+                    if bench_s is not None:
+                        _benchmark_cache[cache_key] = bench_s
 
                 if bench_s is not None:
                     # Build monthly SIP wealth index
@@ -1160,7 +1244,7 @@ def _mc_extract_period_returns(payload: Any) -> tuple[dict, dict]:
                 bench[label] = _mc_to_float(_mc_find_first(
                     node, "benchmark", "benchmark_return", "benchmark_returns",
                     "benchmark return", "category", "category_return", "category_returns",
-                    "category return", "benchmarkvalue", "benchmark value"
+                    "category return", "benchmarkvalue", "benchmark value", "catavg", "cat_avg"
                 ))
         else:
             if fund[label] is None:
@@ -1168,7 +1252,7 @@ def _mc_extract_period_returns(payload: Any) -> tuple[dict, dict]:
 
     def _walk(node: Any):
         if isinstance(node, dict):
-            period = _mc_period_label(_mc_find_first(node, "period", "tenure", "duration", "label", "name"))
+            period = _mc_period_label(_mc_find_first(node, "period", "tenure", "duration", "label", "name", "periodinvested", "period invested"))
             if period:
                 _assign(period, node)
             for key, value in node.items():
