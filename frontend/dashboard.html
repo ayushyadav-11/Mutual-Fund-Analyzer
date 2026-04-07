@@ -971,9 +971,14 @@
                 console.warn(e.message);
                 if (e.message.includes('404')) {
                     window.location.href = '/';
-                } else {
-                    // Fallback: If network fails due to 401 OR CORS failure due to FastAPI drop, show login
+                } else if (e.message.includes('Unauthorized')) {
+                    // Only show login modal if it's explicitly an auth failure
                     document.getElementById('login-modal').style.display = 'flex';
+                } else {
+                    // Show actual database/backend errors!
+                    alert("Backend Error: " + e.message + "\n\nThere might be a problem with your Supabase Connection!");
+                    document.getElementById('dashboard-root').innerHTML = `<h2 style="color:var(--danger);text-align:center;margin-top:50px;">Database Error: ${e.message}</h2>`;
+                    document.getElementById('dashboard-root').style.opacity = '1';
                 }
             } finally {
                 el('loading-overlay').style.display = 'none';

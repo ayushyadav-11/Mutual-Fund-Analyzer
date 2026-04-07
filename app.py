@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.parser import parse_cas, save_session, load_session, recompute_xirr
 from core.risk import compute_risk_metrics
+from data.database import initialize_database
 from core.portfolio_overlap import fetch_fund_holdings, compute_overlap, _scraper
 from core.advanced_analytics import calculate_taxes_and_loads, calculate_goal_strategy, calculate_sip_step_up, run_monte_carlo_simulation, calculate_stress_test, calculate_rebalance, calculate_dividend_cashflow
 
@@ -37,6 +38,15 @@ app = FastAPI(
     version="1.0.0",
 )
 logger = logging.getLogger(__name__)
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("Initializing database schemas...")
+    try:
+        initialize_database()
+        logger.info("Database schemas verified successfully!")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
 
 # Allow frontend to call API
 app.add_middleware(
