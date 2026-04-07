@@ -731,16 +731,9 @@ async def get_fund_details(isin: str):
     scheme = c.fetchone()
     conn.close()
 
-    if not scheme:
-        raise HTTPException(status_code=404, detail="Fund ISIN not indexed in Database.")
-
-    scheme_name = scheme["scheme_name"]
-    category = scheme["category"]
-    scheme_code = scheme["scheme_code"]
-    benchmark_symbol = scheme["benchmark"]
-
     # Preserve CAS-based XIRR for this individual holding.
     holding_xirr = None
+    active_holding = None
     try:
         session_data = _load_or_404()
         active_holding = next((h for h in session_data.get("holdings", []) if h.get("isin") == isin), None)
@@ -750,6 +743,26 @@ async def get_fund_details(isin: str):
         session_data = None
     except Exception:
         session_data = None
+
+    if not scheme:
+        if active_holding:
+            # Fallback to session data if not in DB
+            from core.parser import get_benchmark_ticker
+            name = active_holding.get("name", "Unknown Fund")
+            cat = active_holding.get("category", "")
+            scheme = {
+                "scheme_name": name,
+                "category": cat,
+                "benchmark": get_benchmark_ticker(name, cat),
+                "scheme_code": None
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Fund ISIN not indexed in Database.")
+
+    scheme_name = scheme["scheme_name"]
+    category = scheme["category"]
+    scheme_code = scheme["scheme_code"]
+    benchmark_symbol = scheme["benchmark"]
 
     # ── 2. Check SQLite Cache (1-Hour Expiration) ─────────────────────────────
     cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
