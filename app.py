@@ -722,12 +722,10 @@ async def get_dividends():
 @app.get("/api/fund/{isin}")
 async def get_fund_details(isin: str):
     """Return fund details using Moneycontrol for metrics and Morningstar for portfolio composition."""
-    import sqlite3
-    from data.database import get_nav_series, DB_PATH, get_cached_fund_deep_dive, cache_fund_deep_dive
+    from data.database import get_nav_series, DB_PATH, get_cached_fund_deep_dive, cache_fund_deep_dive, get_connection
 
     # ── 1. Base Scheme from DB ─────────────────────────────────────────────────
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT scheme_name, category, benchmark, scheme_code FROM schemes WHERE isin = ?", (isin,))
     scheme = c.fetchone()
@@ -963,7 +961,7 @@ async def get_fund_details(isin: str):
         "isin":               isin,
         "name":               scheme_name,
         "category":           category,
-        "benchmark":          risk_data.get("benchmark_name") or fallback_benchmark,
+        "benchmark":          risk_data.get("benchmark_name") or benchmark_symbol,
         "aum_cr":             mfapi_data["aum_cr"],
         "expense_ratio":      mfapi_data["expense_ratio"],
         "exit_load":          mfapi_data["exit_load"],
