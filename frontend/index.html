@@ -7,7 +7,7 @@
   <meta name="description" content="Upload your CAMS/KFintech Consolidated Account Statement PDF to analyze your mutual fund portfolio with full risk analytics." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <!-- Navbar -->
@@ -123,6 +123,7 @@
     const mergePortfolioCheckbox = document.getElementById('mergePortfolio');
     const toast = document.getElementById('toast');
 
+    const API = 'https://mutual-fund-analyzer-z48c.onrender.com';
     let selectedFile = null;
 
     // Drag & drop
@@ -159,6 +160,12 @@
     uploadBtn.addEventListener('click', async () => {
       if (!selectedFile) return;
 
+      const token = localStorage.getItem('mf_token');
+      if (!token) {
+        showToast('❌ Please click "Dashboard" and enter the Master Password first!');
+        return;
+      }
+
       uploadCard.style.display = 'none';
       progressCard.style.display = 'block';
 
@@ -181,10 +188,19 @@
           progressLabel.textContent = steps[step];
         }, 3000);
 
-        const res = await fetch('/api/parse', { method: 'POST', body: fd });
+        const res = await fetch(`${API}/api/parse`, { 
+          method: 'POST', 
+          body: fd,
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         clearInterval(stepInterval);
 
         if (!res.ok) {
+          if (res.status === 401) {
+            throw new Error("Invalid Master Password token. Please clear cache and login again.");
+          }
           const err = await res.json();
           throw new Error(err.detail || 'Parsing failed');
         }
