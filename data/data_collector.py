@@ -58,44 +58,43 @@ async def _ingest_fund(client: httpx.AsyncClient, holding: dict, semaphore: asyn
         logger.debug(f"NAV data already present for {name} ({isin}), skipping.")
         return
 
-    async with semaphore:
-        code = await _resolve_scheme_code(client, isin, name)
-        if not code:
-            logger.warning(f"Could not resolve scheme code for {name} ({isin})")
+    code = await _resolve_scheme_code(client, isin, name)
+    if not code:
+        logger.warning(f"Could not resolve scheme code for {name} ({isin})")
+        return
+
+    # Use to_thread to offload blocking wait to prevent uvicorn lock
+    await asyncio.to_thread(insert_or_update_scheme, isin, name, scheme_code=code)
+
+    try:
+        r = await client.get(MFAPI_HIST.format(code), timeout=20.0)
+        if r.status_code != 200:
             return
+        raw = r.json().get("data", [])
+        nav_records = []
+        for point in raw:
+            try:
+                dt = datetime.strptime(point["date"], "%d-%m-%Y")
+                nav_records.append({"date": dt.strftime("%Y-%m-%d"),
+                                    "nav": float(point["nav"])})
+            except Exception:
+                pass
 
-        insert_or_update_scheme(isin, name, scheme_code=code)
-
-        try:
-            r = await client.get(MFAPI_HIST.format(code), timeout=20.0)
-            if r.status_code != 200:
-                return
-            raw = r.json().get("data", [])
-            nav_records = []
-            for point in raw:
-                try:
-                    dt = datetime.strptime(point["date"], "%d-%m-%Y")
-                    nav_records.append({"date": dt.strftime("%Y-%m-%d"),
-                                        "nav": float(point["nav"])})
-                except Exception:
-                    pass
-
-            batch_insert_navs(isin, nav_records)
-            logger.info(f"Ingested {len(nav_records)} NAV records for {name} ({isin})")
-        except Exception as e:
-            logger.error(f"NAV ingestion failed for {name}: {e}")
+        await asyncio.to_thread(batch_insert_navs, isin, nav_records)
+        logger.info(f"Ingested {len(nav_records)} NAV records for {name} ({isin})")
+    except Exception as e:
+        logger.error(f"NAV ingestion failed for {name}: {e}")
 
 
 async def fetch_and_populate_mfapi_data(holdings: list):
     """
-    Called by /api/risk on startup.  Concurrently resolves scheme codes via
-    MFAPI search (avoids the broken /mf master-list endpoint) and stores
-    historical NAVs in SQLite/Postgres.
+    Called by /api/risk on startup. Consecutively resolves scheme codes
+    and stores historical NAVs in SQLite/Postgres sequentially to prevent
+    connection bombing on Supavisor logic.
     """
-    semaphore = asyncio.Semaphore(5)        # max 5 concurrent requests
     async with httpx.AsyncClient(timeout=20.0) as client:
-        tasks = [_ingest_fund(client, h, semaphore) for h in holdings]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        for holding in holdings:
+            await _ingest_fund(client, holding, None)
 
 
 if __name__ == "__main__":
