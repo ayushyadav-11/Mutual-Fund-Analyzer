@@ -957,12 +957,23 @@
         // ── Init ─────────────────────────────────────────────────────────────────────
         async function init() {
             try {
+                // If there's no token at all, pop the login modal immediately to prevent useless fetch
+                if (!localStorage.getItem('mf_token')) {
+                    document.getElementById('login-modal').style.display = 'flex';
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    return;
+                }
+                
                 await Promise.all([loadSummary(), loadHoldings(), loadAllocation(), loadGrowth(), loadTransactions()]);
                 el('dashboard-root').style.opacity = '1';
                 el('dashboard-root').style.transition = 'opacity 0.4s';
             } catch (e) {
+                console.warn(e.message);
                 if (e.message.includes('404')) {
                     window.location.href = '/';
+                } else {
+                    // Fallback: If network fails due to 401 OR CORS failure due to FastAPI drop, show login
+                    document.getElementById('login-modal').style.display = 'flex';
                 }
             } finally {
                 el('loading-overlay').style.display = 'none';
@@ -976,7 +987,7 @@
 
             const res = await fetch(API + path, { ...options, headers });
             if (res.status === 401) {
-                showLoginModal();
+                document.getElementById('login-modal').style.display = 'flex';
                 throw new Error('Unauthorized');
             }
             if (!res.ok) {

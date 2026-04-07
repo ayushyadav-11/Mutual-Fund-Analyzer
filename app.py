@@ -64,7 +64,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Check Bearer Token
             auth_header = request.headers.get("Authorization")
             if not auth_header or auth_header != f"Bearer {MASTER_PASSWORD}":
-                return JSONResponse(status_code=401, content={"detail": "Unauthorized access. Please login."})
+                return JSONResponse(
+                    status_code=401, 
+                    content={"detail": "Unauthorized access. Please login."},
+                    headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"}
+                )
                 
         return await call_next(request)
 
