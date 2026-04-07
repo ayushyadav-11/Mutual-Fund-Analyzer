@@ -41,11 +41,15 @@
             <div class="card investor-bar fade-in" id="investor-bar">
                 <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
                     <div class="investor-name" id="investor-name">—</div>
-                    <div id="family-badge" style="display: none; background: var(--accent); color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold;">👨‍👩‍👧‍👦 Family View</div>
+                    <div id="family-badge"
+                        style="display: none; background: var(--accent); color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold;">
+                        👨‍👩‍👧‍👦 Family View</div>
                     <div class="period-tag" id="period-tag"></div>
                 </div>
                 <div class="actions">
-                    <button onclick="localStorage.removeItem('mf_token'); window.location.reload();" class="btn" style="padding:8px 18px;font-size:0.85rem;background:rgba(255,100,100,0.1);color:#ff8a8a;border:1px solid rgba(255,100,100,0.2);">🔒 Logout</button>
+                    <button onclick="localStorage.removeItem('mf_token'); window.location.reload();" class="btn"
+                        style="padding:8px 18px;font-size:0.85rem;background:rgba(255,100,100,0.1);color:#ff8a8a;border:1px solid rgba(255,100,100,0.2);">🔒
+                        Logout</button>
                     <a href="/" class="btn btn-outline" style="padding:8px 18px;font-size:0.85rem;">⬆️ New Upload</a>
                 </div>
             </div>
@@ -66,22 +70,27 @@
             <!-- ═════════════════════════ TAB: FUNDS BROWSER ════════════════════════ -->
             <div class="tab-panel" id="tab-funds">
                 <div class="card" style="padding:24px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                    <div
+                        style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
                         <div>
                             <h2 style="font-size:1.3rem;font-weight:800;margin:0;">🔍 Fund Browser</h2>
-                            <p style="color:var(--text-secondary);font-size:0.85rem;margin:4px 0 0;">Active funds only &middot; Click a card for full deep-dive analytics</p>
+                            <p style="color:var(--text-secondary);font-size:0.85rem;margin:4px 0 0;">Active funds only
+                                &middot; Click a card for full deep-dive analytics</p>
                         </div>
                         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-                            <input id="funds-search" type="text" placeholder="Search fund name…" oninput="filterFundCards()"
-                                style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;width:220px;outline:none;"/>
+                            <input id="funds-search" type="text" placeholder="Search fund name…"
+                                oninput="filterFundCards()"
+                                style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;width:220px;outline:none;" />
                             <select id="funds-category-filter" onchange="filterFundCards()"
                                 style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;outline:none;">
                                 <option value="">All Categories</option>
                             </select>
                         </div>
                     </div>
-                    <div id="funds-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;"></div>
-                    <div id="funds-empty" class="empty-state" style="display:none;">No active funds match your filter.</div>
+                    <div id="funds-grid"
+                        style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;"></div>
+                    <div id="funds-empty" class="empty-state" style="display:none;">No active funds match your filter.
+                    </div>
                 </div>
             </div>
 
@@ -292,13 +301,27 @@
                 <!-- Risk interpretation guide -->
                 <div class="card fade-in" style="padding:24px;margin-top:20px;">
                     <div class="section-title" style="margin-bottom:16px;">🧭 How to Read These Metrics</div>
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;font-size:0.85rem;color:var(--text-secondary);">
-                        <div><strong style="color:var(--text-primary);">📊 Volatility</strong><br />How wildly the NAV swings. Rated vs your fund's peer category — so a 25% volatility is <em>Low</em> for Small Cap but <em>High</em> for Large Cap.</div>
-                        <div><strong style="color:var(--text-primary);">⚡ Sharpe Ratio</strong><br />Return you earned <em>per unit of risk</em>. A rating of <span class="rating-badge-good">Good</span> means your reward fairly compensates the risk taken vs the risk-free rate (6.5% RBI).</div>
-                        <div><strong style="color:var(--text-primary);">🛡️ Sortino Ratio</strong><br />Like Sharpe, but only punishes <em>downside</em> moves. Better suited for volatile equity funds — a high Sortino means you lose money rarely.</div>
-                        <div><strong style="color:var(--text-primary);">📉 Max Drawdown</strong><br />The worst peak-to-trough loss in 3 years. <span class="rating-badge-mild">Mild</span> = survived market crashes well. <span class="rating-badge-severe">Severe</span> = significant losses during downturns.</div>
-                        <div><strong style="color:var(--text-primary);">📡 Beta</strong><br />Sensitivity to the <em>correct</em> benchmark (not always Nifty 50 — Banking funds use Nifty Bank, etc.). <span class="rating-badge-def">Defensive</span> &lt;1 means less market sensitivity.</div>
-                        <div><strong style="color:var(--text-primary);">🏅 Peer Rank</strong><br />How your fund compares to <em>other funds in your own portfolio</em> of the same type. <strong>#1</strong> = best risk-adjusted return (Sharpe) among similar funds you hold.</div>
+                    <div
+                        style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;font-size:0.85rem;color:var(--text-secondary);">
+                        <div><strong style="color:var(--text-primary);">📊 Volatility</strong><br />How wildly the NAV
+                            swings. Rated vs your fund's peer category — so a 25% volatility is <em>Low</em> for Small
+                            Cap but <em>High</em> for Large Cap.</div>
+                        <div><strong style="color:var(--text-primary);">⚡ Sharpe Ratio</strong><br />Return you earned
+                            <em>per unit of risk</em>. A rating of <span class="rating-badge-good">Good</span> means
+                            your reward fairly compensates the risk taken vs the risk-free rate (6.5% RBI).</div>
+                        <div><strong style="color:var(--text-primary);">🛡️ Sortino Ratio</strong><br />Like Sharpe, but
+                            only punishes <em>downside</em> moves. Better suited for volatile equity funds — a high
+                            Sortino means you lose money rarely.</div>
+                        <div><strong style="color:var(--text-primary);">📉 Max Drawdown</strong><br />The worst
+                            peak-to-trough loss in 3 years. <span class="rating-badge-mild">Mild</span> = survived
+                            market crashes well. <span class="rating-badge-severe">Severe</span> = significant losses
+                            during downturns.</div>
+                        <div><strong style="color:var(--text-primary);">📡 Beta</strong><br />Sensitivity to the
+                            <em>correct</em> benchmark (not always Nifty 50 — Banking funds use Nifty Bank, etc.). <span
+                                class="rating-badge-def">Defensive</span> &lt;1 means less market sensitivity.</div>
+                        <div><strong style="color:var(--text-primary);">🏅 Peer Rank</strong><br />How your fund
+                            compares to <em>other funds in your own portfolio</em> of the same type. <strong>#1</strong>
+                            = best risk-adjusted return (Sharpe) among similar funds you hold.</div>
                     </div>
                 </div>
             </div>
@@ -310,42 +333,53 @@
                         <div class="section-title">🔗 Portfolio Overlap Analysis</div>
                         <div style="display:flex;align-items:center;gap:12px;">
                             <span id="overlap-data-month" style="font-size:0.78rem;color:var(--text-muted);"></span>
-                            <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;" onclick="loadOverlap(true)" id="overlap-refresh-btn">🔄 Refresh Data</button>
+                            <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;"
+                                onclick="loadOverlap(true)" id="overlap-refresh-btn">🔄 Refresh Data</button>
                         </div>
                     </div>
                     <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
-                        Fetches monthly portfolio disclosures from AMC websites and computes how much stock-level overlap exists between your equity funds.
-                        A high overlap % means two funds are investing in the same stocks — reducing the benefit of diversification.
+                        Fetches monthly portfolio disclosures from AMC websites and computes how much stock-level
+                        overlap exists between your equity funds.
+                        A high overlap % means two funds are investing in the same stocks — reducing the benefit of
+                        diversification.
                     </p>
 
                     <div id="overlap-loading" style="display:none;text-align:center;padding:40px 0;">
                         <div class="spinner" style="margin:0 auto 16px;"></div>
-                        <p style="color:var(--text-muted);font-size:0.9rem;">Downloading AMC portfolio files… this may take 15–30 seconds.</p>
+                        <p style="color:var(--text-muted);font-size:0.9rem;">Downloading AMC portfolio files… this may
+                            take 15–30 seconds.</p>
                     </div>
 
                     <div id="overlap-content" style="display:none;">
                         <!-- Fund status badges -->
-                        <div id="overlap-fund-status" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;"></div>
+                        <div id="overlap-fund-status" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+                        </div>
 
                         <!-- Heatmap Matrix -->
-                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">Pairwise Overlap Matrix</div>
+                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">Pairwise Overlap Matrix
+                        </div>
                         <div style="overflow-x:auto;margin-bottom:28px;">
-                            <table id="overlap-matrix" style="border-collapse:separate;border-spacing:3px;min-width:300px;"></table>
+                            <table id="overlap-matrix"
+                                style="border-collapse:separate;border-spacing:3px;min-width:300px;"></table>
                         </div>
 
                         <!-- Top overlapping pairs -->
-                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">⚠️ Top Overlapping Pairs</div>
+                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">⚠️ Top Overlapping
+                            Pairs</div>
                         <div id="overlap-pairs" style="display:grid;gap:14px;margin-bottom:28px;"></div>
 
                         <!-- Multi-fund stocks -->
-                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">🔁 Stocks Held by Multiple Funds</div>
+                        <div class="section-title" style="font-size:0.92rem;margin-bottom:12px;">🔁 Stocks Held by
+                            Multiple Funds</div>
                         <div id="overlap-stocks" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
                     </div>
 
                     <div id="overlap-empty" style="text-align:center;padding:50px 0;">
                         <div style="font-size:2.5rem;margin-bottom:12px;">🔗</div>
-                        <p style="color:var(--text-secondary);margin-bottom:16px;">Click below to analyse overlap between your equity funds using AMC monthly portfolio disclosures.</p>
-                        <button class="btn btn-primary" onclick="loadOverlap(false)" style="font-size:0.9rem;padding:10px 24px;">Analyse Portfolio Overlap</button>
+                        <p style="color:var(--text-secondary);margin-bottom:16px;">Click below to analyse overlap
+                            between your equity funds using AMC monthly portfolio disclosures.</p>
+                        <button class="btn btn-primary" onclick="loadOverlap(false)"
+                            style="font-size:0.9rem;padding:10px 24px;">Analyse Portfolio Overlap</button>
                     </div>
 
                     <div id="overlap-error" style="display:none;text-align:center;padding:30px 0;">
@@ -358,7 +392,7 @@
             <!-- ═════════════════════════ TAB: PLANNER & TAX ═══════════════════════ -->
             <div class="tab-panel" id="tab-planner">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
-                    
+
                     <!-- Goal Planner -->
                     <div class="card fade-in" style="padding:24px;">
                         <div class="section-header">
@@ -367,44 +401,63 @@
                         <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
                             Estimate the monthly SIP required to reach a specific financial goal.
                         </p>
-                        
+
                         <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:24px;">
                             <div>
-                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Target Amount (₹)</label>
-                                <input type="number" id="goal-target" class="filter-select" style="width:100%;font-size:1rem;" placeholder="e.g. 5000000" value="5000000">
+                                <label
+                                    style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Target
+                                    Amount (₹)</label>
+                                <input type="number" id="goal-target" class="filter-select"
+                                    style="width:100%;font-size:1rem;" placeholder="e.g. 5000000" value="5000000">
                             </div>
                             <div>
-                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Time Horizon (Years)</label>
-                                <input type="number" id="goal-horizon" class="filter-select" style="width:100%;font-size:1rem;" placeholder="e.g. 10" value="10">
+                                <label
+                                    style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Time
+                                    Horizon (Years)</label>
+                                <input type="number" id="goal-horizon" class="filter-select"
+                                    style="width:100%;font-size:1rem;" placeholder="e.g. 10" value="10">
                             </div>
-                            <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-secondary);">
-                                <input type="checkbox" id="goal-use-portfolio" checked> Include current portfolio value 
+                            <label
+                                style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-secondary);">
+                                <input type="checkbox" id="goal-use-portfolio" checked> Include current portfolio value
                             </label>
-                            
-                            <button class="btn btn-primary" onclick="calculateGoal()" style="padding:10px;width:100%;justify-content:center;">Calculate Strategy</button>
+
+                            <button class="btn btn-primary" onclick="calculateGoal()"
+                                style="padding:10px;width:100%;justify-content:center;">Calculate Strategy</button>
                         </div>
-                        
-                        <div id="goal-result" style="display:none;padding:16px;background:var(--card-bg-light);border-radius:12px;border:1px solid var(--border);">
+
+                        <div id="goal-result"
+                            style="display:none;padding:16px;background:var(--card-bg-light);border-radius:12px;border:1px solid var(--border);">
                             <div style="text-align:center;margin-bottom:16px;">
                                 <div style="font-size:0.85rem;color:var(--text-muted);">Required Monthly SIP</div>
-                                <div id="goal-res-sip" style="font-size:2rem;font-weight:700;color:var(--accent);"></div>
+                                <div id="goal-res-sip" style="font-size:2rem;font-weight:700;color:var(--accent);">
+                                </div>
                             </div>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.85rem;margin-bottom:16px;">
-                                <div><span style="color:var(--text-muted);">Shortfall:</span> <br><strong style="color:var(--text-primary);" id="goal-res-shortfall"></strong></div>
-                                <div><span style="color:var(--text-muted);">Assumed Return:</span> <br><strong style="color:var(--text-primary);" id="goal-res-return"></strong></div>
-                                <div><span style="color:var(--text-muted);">Profile:</span> <br><strong style="color:var(--text-primary);" id="goal-res-profile"></strong></div>
-                                <div><span style="color:var(--text-muted);">Current Value FV:</span> <br><strong style="color:var(--text-primary);" id="goal-res-fv"></strong></div>
+                            <div
+                                style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.85rem;margin-bottom:16px;">
+                                <div><span style="color:var(--text-muted);">Shortfall:</span> <br><strong
+                                        style="color:var(--text-primary);" id="goal-res-shortfall"></strong></div>
+                                <div><span style="color:var(--text-muted);">Assumed Return:</span> <br><strong
+                                        style="color:var(--text-primary);" id="goal-res-return"></strong></div>
+                                <div><span style="color:var(--text-muted);">Profile:</span> <br><strong
+                                        style="color:var(--text-primary);" id="goal-res-profile"></strong></div>
+                                <div><span style="color:var(--text-muted);">Current Value FV:</span> <br><strong
+                                        style="color:var(--text-primary);" id="goal-res-fv"></strong></div>
                             </div>
-                            <div style="font-size:0.8rem;color:var(--text-secondary);padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;">
+                            <div
+                                style="font-size:0.8rem;color:var(--text-secondary);padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;">
                                 <strong>💡 Strategy:</strong> <span id="goal-res-strategy"></span>
                             </div>
-                            
-                            <div id="goal-elss-box" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);padding:12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
-                                <strong>🟢 Tax Saving (80C):</strong> Consider allocating <span id="goal-res-elss" style="font-weight:600;color:#6ee7b7;"></span>/mo to ELSS funds to maximize tax savings.
+
+                            <div id="goal-elss-box"
+                                style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);padding:12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
+                                <strong>🟢 Tax Saving (80C):</strong> Consider allocating <span id="goal-res-elss"
+                                    style="font-weight:600;color:#6ee7b7;"></span>/mo to ELSS funds to maximize tax
+                                savings.
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Tax Estimator -->
                     <div class="card fade-in" style="padding:24px;">
                         <div class="section-header">
@@ -413,41 +466,51 @@
                         <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
                             Estimated liabilities if you sell your entire portfolio today (FIFO accounting).
                         </p>
-                        
+
                         <div id="tax-loading" style="text-align:center;padding:30px 0;display:none;">
                             <div class="spinner" style="margin:0 auto 10px;"></div>
-                            <div style="font-size:0.8rem;color:var(--text-muted);">Calculating FIFO capital gains...</div>
+                            <div style="font-size:0.8rem;color:var(--text-muted);">Calculating FIFO capital gains...
+                            </div>
                         </div>
-                        
+
                         <div id="tax-content">
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">
-                                <div style="padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:12px;">
-                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Total Est. Tax</div>
+                                <div
+                                    style="padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:12px;">
+                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Total Est.
+                                        Tax</div>
                                     <div style="font-size:1.5rem;font-weight:700;color:#f87171;" id="tax-est">—</div>
                                 </div>
-                                <div style="padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;">
-                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Total Exit Loads</div>
+                                <div
+                                    style="padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;">
+                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Total Exit
+                                        Loads</div>
                                     <div style="font-size:1.5rem;font-weight:700;color:#fbbf24;" id="tax-load">—</div>
                                 </div>
                             </div>
-                            
+
                             <div style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Breakdown</div>
-                            <div style="display:flex;flex-direction:column;gap:8px;font-size:0.85rem;margin-bottom:24px;">
-                                <div style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
+                            <div
+                                style="display:flex;flex-direction:column;gap:8px;font-size:0.85rem;margin-bottom:24px;">
+                                <div
+                                    style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
                                     <span style="color:var(--text-secondary);">Equity STCG (20%)</span>
                                     <strong id="tax-stcg">—</strong>
                                 </div>
-                                <div style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
+                                <div
+                                    style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
                                     <span style="color:var(--text-secondary);">Equity LTCG (12.5% >1.25L)</span>
                                     <strong id="tax-ltcg">—</strong>
                                 </div>
-                                <div style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
+                                <div
+                                    style="display:flex;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);">
                                     <span style="color:var(--text-secondary);">Debt Gains (Slab Rate ~30%)</span>
                                     <strong id="tax-debt">—</strong>
                                 </div>
                             </div>
-                            
-                            <button class="btn btn-outline" style="width:100%;justify-content:center;padding:8px;" onclick="loadTaxes()">🔄 Recalculate Taxes</button>
+
+                            <button class="btn btn-outline" style="width:100%;justify-content:center;padding:8px;"
+                                onclick="loadTaxes()">🔄 Recalculate Taxes</button>
                         </div>
                     </div>
                 </div>
@@ -455,46 +518,65 @@
 
             <!-- ═════════════════════════ TAB: PROJECTIONS ════════════════════════ -->
             <div class="tab-panel" id="tab-projections">
-                
+
                 <!-- Monte Carlo & Step-Up -->
                 <div class="card fade-in" style="padding:24px;margin-bottom:24px;">
                     <div class="section-header">
                         <div class="section-title">🚀 Wealth Projections & Monte Carlo Simulation</div>
                     </div>
-                    
+
                     <div style="display:grid;grid-template-columns:300px 1fr;gap:32px;">
-                        
+
                         <!-- Inputs -->
                         <div style="display:flex;flex-direction:column;gap:16px;">
                             <div>
-                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Monthly SIP Additions (₹)</label>
-                                <input type="number" id="sim-sip" class="filter-select" style="width:100%;" value="20000">
+                                <label
+                                    style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Monthly
+                                    SIP Additions (₹)</label>
+                                <input type="number" id="sim-sip" class="filter-select" style="width:100%;"
+                                    value="20000">
                             </div>
                             <div>
-                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Annual SIP Step-Up (%)</label>
+                                <label
+                                    style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Annual
+                                    SIP Step-Up (%)</label>
                                 <input type="number" id="sim-step" class="filter-select" style="width:100%;" value="10">
                             </div>
                             <div>
-                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Horizon (Years)</label>
-                                <input type="number" id="sim-years" class="filter-select" style="width:100%;" value="15">
+                                <label
+                                    style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Horizon
+                                    (Years)</label>
+                                <input type="number" id="sim-years" class="filter-select" style="width:100%;"
+                                    value="15">
                             </div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                                 <div>
-                                    <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Exp Return %</label>
-                                    <input type="number" id="sim-ret" class="filter-select" style="width:100%;" value="12">
+                                    <label
+                                        style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Exp
+                                        Return %</label>
+                                    <input type="number" id="sim-ret" class="filter-select" style="width:100%;"
+                                        value="12">
                                 </div>
                                 <div>
-                                    <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Volatility %</label>
-                                    <input type="number" id="sim-vol" class="filter-select" style="width:100%;" value="15">
+                                    <label
+                                        style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Volatility
+                                        %</label>
+                                    <input type="number" id="sim-vol" class="filter-select" style="width:100%;"
+                                        value="15">
                                 </div>
                             </div>
-                            <button class="btn btn-primary" onclick="runSimulations()" style="padding:10px;justify-content:center;margin-top:8px;">Run 500 Simulations</button>
-                            
+                            <button class="btn btn-primary" onclick="runSimulations()"
+                                style="padding:10px;justify-content:center;margin-top:8px;">Run 500 Simulations</button>
+
                             <!-- Key Outcomes Box -->
-                            <div id="sim-results" style="display:none;margin-top:16px;background:var(--card-bg-light);border:1px solid var(--border);border-radius:12px;padding:16px;">
-                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;text-align:center;">Estimated Future Value</div>
+                            <div id="sim-results"
+                                style="display:none;margin-top:16px;background:var(--card-bg-light);border:1px solid var(--border);border-radius:12px;padding:16px;">
+                                <div
+                                    style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;text-align:center;">
+                                    Estimated Future Value</div>
                                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">Median (50th %ile)</span>
+                                    <span style="color:var(--text-secondary);font-size:0.85rem;">Median (50th
+                                        %ile)</span>
                                     <strong style="color:var(--text-primary);" id="sim-res-med"></strong>
                                 </div>
                                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
@@ -507,25 +589,28 @@
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Chart -->
                         <div style="position:relative;min-height:300px;">
                             <canvas id="sim-chart"></canvas>
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Stress Test -->
                 <div class="card fade-in" style="padding:24px;">
                     <div class="section-header">
                         <div class="section-title">📉 Portfolio Stress Testing</div>
-                        <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;" onclick="loadStressTest()">Run Stress Test</button>
+                        <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;"
+                            onclick="loadStressTest()">Run Stress Test</button>
                     </div>
                     <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
-                        Estimates how much your current portfolio would drop during major historical market crashes, based on your current Equity vs Debt allocation.
+                        Estimates how much your current portfolio would drop during major historical market crashes,
+                        based on your current Equity vs Debt allocation.
                     </p>
-                    
-                    <div id="stress-results" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:16px;">
+
+                    <div id="stress-results"
+                        style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:16px;">
                         <div class="empty-state" style="grid-column:1/-1;">
                             <div class="icon">🔍</div>
                             <p>Click Run to simulate historical crashes</p>
@@ -537,49 +622,61 @@
             <!-- ═════════════════════════ TAB: PORTFOLIO MANAGEMENT ════════════════════ -->
             <div class="tab-panel" id="tab-manage">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
-                    
+
                     <!-- Auto-Rebalancing -->
                     <div class="card fade-in" style="padding:24px;">
                         <div class="section-header">
                             <div class="section-title">⚖️ Portfolio Rebalancing</div>
                         </div>
                         <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
-                            Input your target Equity allocation. The engine will calculate required Buy/Sell trades to align your portfolio.
+                            Input your target Equity allocation. The engine will calculate required Buy/Sell trades to
+                            align your portfolio.
                         </p>
-                        
+
                         <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:24px;">
                             <div style="flex:1;">
-                                <label style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Target Equity %</label>
-                                <input type="number" id="rebal-target" class="filter-select" style="width:100%;font-size:1rem;" value="60">
+                                <label
+                                    style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Target
+                                    Equity %</label>
+                                <input type="number" id="rebal-target" class="filter-select"
+                                    style="width:100%;font-size:1rem;" value="60">
                             </div>
-                            <button class="btn btn-primary" onclick="calculateRebalance()" style="padding:10px;">Calculate Trades</button>
+                            <button class="btn btn-primary" onclick="calculateRebalance()"
+                                style="padding:10px;">Calculate Trades</button>
                         </div>
-                        
-                        <div id="rebal-result" style="display:none;padding:16px;background:var(--card-bg-light);border-radius:12px;border:1px solid var(--border);">
-                            <div style="display:flex;justify-content:space-between;margin-bottom:12px;align-items:center;">
+
+                        <div id="rebal-result"
+                            style="display:none;padding:16px;background:var(--card-bg-light);border-radius:12px;border:1px solid var(--border);">
+                            <div
+                                style="display:flex;justify-content:space-between;margin-bottom:12px;align-items:center;">
                                 <div style="font-size:0.85rem;color:var(--text-muted);">Current Equity</div>
-                                <div id="rebal-curr" style="font-size:1.2rem;font-weight:700;color:var(--text-primary);"></div>
+                                <div id="rebal-curr"
+                                    style="font-size:1.2rem;font-weight:700;color:var(--text-primary);"></div>
                             </div>
-                            
-                            <div id="rebal-msg" style="font-size:0.85rem;margin-bottom:16px;padding:12px;border-radius:8px;"></div>
-                            
+
+                            <div id="rebal-msg"
+                                style="font-size:0.85rem;margin-bottom:16px;padding:12px;border-radius:8px;"></div>
+
                             <div id="rebal-actions-container" style="display:none;">
-                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Suggested Trades</div>
+                                <div
+                                    style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">
+                                    Suggested Trades</div>
                                 <div id="rebal-actions" style="display:flex;flex-direction:column;gap:8px;"></div>
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Dividend Cashflow -->
                     <div class="card fade-in" style="padding:24px;">
                         <div class="section-header">
                             <div class="section-title">💸 Dividend Cashflow Tracker</div>
-                            <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;" onclick="loadDividends()">Refresh</button>
+                            <button class="btn btn-outline" style="padding:6px 14px;font-size:0.82rem;"
+                                onclick="loadDividends()">Refresh</button>
                         </div>
                         <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 20px;">
                             Tracks historical dividend payouts and reinvestments across your mutual funds by year.
                         </p>
-                        
+
                         <div id="div-content">
                             <div class="empty-state">
                                 <div class="icon">📊</div>
@@ -587,7 +684,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                 </div>
             </div>
 
@@ -658,7 +755,8 @@
             </div>
             <div class="chat-body" id="chat-body">
                 <div class="chat-msg ai">
-                    <p>Hi there! I'm your AI financial expert. I have full context of your <strong>Mutual Fund Analyzer</strong> portfolio.</p>
+                    <p>Hi there! I'm your AI financial expert. I have full context of your <strong>Mutual Fund
+                            Analyzer</strong> portfolio.</p>
                     <p>Ask me anything about your current holdings, risk metrics, or general financial advice!</p>
                 </div>
                 <div class="typing-indicator" id="chat-typing">
@@ -668,7 +766,8 @@
                 </div>
             </div>
             <div class="chat-input-area">
-                <input type="text" id="chat-input" class="chat-input" placeholder="Ask about your portfolio..." onkeypress="handleChatKey(event)" />
+                <input type="text" id="chat-input" class="chat-input" placeholder="Ask about your portfolio..."
+                    onkeypress="handleChatKey(event)" />
                 <button class="chat-send" onclick="sendChatMessage()">➤</button>
             </div>
         </div>
@@ -682,39 +781,79 @@
             <!-- ① Header -->
             <button class="modal-close" id="fund-modal-close" onclick="closeFundModal()">✕</button>
             <div style="margin-bottom:18px;">
-                <h2 id="fm-name" style="font-size:1.4rem;font-weight:800;color:#fff;line-height:1.3;margin-bottom:8px;">—</h2>
+                <h2 id="fm-name" style="font-size:1.4rem;font-weight:800;color:#fff;line-height:1.3;margin-bottom:8px;">
+                    —</h2>
                 <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px;">
                     <span class="badge" id="fm-category">—</span>
                     <span class="badge" style="background:#1e3a5f;" id="fm-benchmark">—</span>
                 </div>
                 <!-- Meta pill bar: AUM · NAV · Expense Ratio · Exit Load -->
                 <div style="display:flex;flex-wrap:wrap;gap:12px;">
-                    <div class="fm-meta-pill"><span class="fm-meta-label">AUM</span><span class="fm-meta-val" id="fm-aum">—</span></div>
-                    <div class="fm-meta-pill"><span class="fm-meta-label">Current NAV</span><span class="fm-meta-val" id="fm-nav">—</span></div>
-                    <div class="fm-meta-pill"><span class="fm-meta-label">Expense Ratio</span><span class="fm-meta-val" id="fm-expense">—</span></div>
-                    <div class="fm-meta-pill"><span class="fm-meta-label">Exit Load</span><span class="fm-meta-val" id="fm-exit-load">—</span></div>
-                    <div class="fm-meta-pill"><span class="fm-meta-label">Portfolio Turnover</span><span class="fm-meta-val" id="fm-turnover">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">AUM</span><span class="fm-meta-val"
+                            id="fm-aum">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Current NAV</span><span class="fm-meta-val"
+                            id="fm-nav">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Expense Ratio</span><span class="fm-meta-val"
+                            id="fm-expense">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Exit Load</span><span class="fm-meta-val"
+                            id="fm-exit-load">—</span></div>
+                    <div class="fm-meta-pill"><span class="fm-meta-label">Portfolio Turnover</span><span
+                            class="fm-meta-val" id="fm-turnover">—</span></div>
                 </div>
             </div>
 
             <!-- ② Quantitative Metrics Grid -->
             <h3 class="fm-section-title">📐 Quantitative Indicators</h3>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:22px;">
-                <div class="fm-metric-pill"><div class="fmp-label">Sharpe Ratio</div><div class="fmp-val" id="fm-sharpe" style="color:var(--accent);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Sortino Ratio</div><div class="fmp-val" id="fm-sortino" style="color:var(--info);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Beta</div><div class="fmp-val" id="fm-beta" style="color:var(--warning);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Alpha (%)</div><div class="fmp-val" id="fm-alpha" style="color:var(--success);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Std Deviation</div><div class="fmp-val" id="fm-stddev" style="color:var(--warning);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Max Drawdown</div><div class="fmp-val" id="fm-drawdown" style="color:var(--danger);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Volatility</div><div class="fmp-val" id="fm-volatility" style="color:var(--warning);">—</div></div>
-                <div class="fm-metric-pill"><div class="fmp-label">Benchmark</div><div class="fmp-val" id="fm-bench-label" style="font-size:0.72rem;color:var(--text-secondary);">—</div></div>
+            <div
+                style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:22px;">
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Sharpe Ratio</div>
+                    <div class="fmp-val" id="fm-sharpe" style="color:var(--accent);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Sortino Ratio</div>
+                    <div class="fmp-val" id="fm-sortino" style="color:var(--info);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Beta</div>
+                    <div class="fmp-val" id="fm-beta" style="color:var(--warning);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Alpha (%)</div>
+                    <div class="fmp-val" id="fm-alpha" style="color:var(--success);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Std Deviation</div>
+                    <div class="fmp-val" id="fm-stddev" style="color:var(--warning);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Max Drawdown</div>
+                    <div class="fmp-val" id="fm-drawdown" style="color:var(--danger);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Volatility</div>
+                    <div class="fmp-val" id="fm-volatility" style="color:var(--warning);">—</div>
+                </div>
+                <div class="fm-metric-pill">
+                    <div class="fmp-label">Benchmark</div>
+                    <div class="fmp-val" id="fm-bench-label" style="font-size:0.72rem;color:var(--text-secondary);">—
+                    </div>
+                </div>
             </div>
 
             <!-- ③ Rolling Returns -->
             <h3 class="fm-section-title">📅 Trailing CAGR Returns</h3>
             <div style="overflow-x:auto;margin-bottom:22px;">
                 <table class="data-table">
-                    <thead><tr><th>Period</th><th>1 Year</th><th>3 Year</th><th>5 Year</th><th>10 Year</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th>1 Year</th>
+                            <th>3 Year</th>
+                            <th>5 Year</th>
+                            <th>10 Year</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         <tr>
                             <td style="color:var(--text-secondary);font-size:0.82rem;">Fund CAGR</td>
@@ -742,18 +881,30 @@
 
             <!-- ⑤ SIP vs Benchmark Chart -->
             <h3 class="fm-section-title">📈 SIP Performance vs Benchmark</h3>
-            <div style="position:relative;height:220px;margin-bottom:22px;background:var(--bg-secondary);border-radius:12px;padding:12px;">
+            <div
+                style="position:relative;height:220px;margin-bottom:22px;background:var(--bg-secondary);border-radius:12px;padding:12px;">
                 <canvas id="fm-sip-chart"></canvas>
-                <div class="empty-state" id="fm-sip-empty" style="display:none;">SIP comparison unavailable — no SIP/BUY transactions found.</div>
+                <div class="empty-state" id="fm-sip-empty" style="display:none;">SIP comparison unavailable — no SIP/BUY
+                    transactions found.</div>
             </div>
 
             <!-- ⑥ Portfolio Disclosure — Top 20 Holdings -->
             <h3 class="fm-section-title">💼 Portfolio Disclosure — Top Holdings</h3>
             <div style="max-height:280px;overflow-y:auto;border-radius:8px;border:1px solid var(--border);">
                 <table class="data-table" id="fm-holdings-table">
-                    <thead><tr><th>Asset</th><th style="text-align:right;">Weight (%)</th><th style="text-align:right;min-width:90px;">Bar</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Asset</th>
+                            <th style="text-align:right;">Weight (%)</th>
+                            <th style="text-align:right;min-width:90px;">Bar</th>
+                        </tr>
+                    </thead>
                     <tbody id="fm-holdings-body">
-                        <tr><td colspan="3"><div class="empty-state">Loading...</div></td></tr>
+                        <tr>
+                            <td colspan="3">
+                                <div class="empty-state">Loading...</div>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -763,7 +914,7 @@
 
     <script>
         // ── Globals ──────────────────────────────────────────────────────────────────
-        const API = '';
+        const API = 'https://mutual-fund-analyzer-z48c.onrender.com';
         let allTransactions = [];
         let allHoldings = [];
         let allocChart = null;
@@ -786,7 +937,7 @@
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
             window.scrollTo(0, 0);
-            
+
             if (tab === 'risk' && el('risk-fund-body').querySelector('.empty-state')) loadRisk();
             if (tab === 'planner' && el('tax-est').textContent === '—') {
                 loadTaxes();
@@ -836,10 +987,10 @@
         // ── Summary ───────────────────────────────────────────────────────────────────
         async function loadSummary() {
             const d = await apiFetch('/api/summary');
-            
+
             const rawName = d.investor.name || 'Your Portfolio';
             el('investor-name').textContent = rawName;
-            
+
             // Show Family View badge if name indicates merged portfolios (e.g. "Jane Doe & John Doe")
             if (rawName.includes('&')) {
                 el('family-badge').style.display = 'block';
@@ -1291,17 +1442,17 @@
         async function loadTaxes() {
             el('tax-content').style.display = 'none';
             el('tax-loading').style.display = 'block';
-            
+
             try {
                 const d = await apiFetch('/api/taxes');
-                
+
                 el('tax-est').textContent = fmt(d.estimated_tax);
                 el('tax-load').textContent = fmt(d.total_exit_load);
-                
+
                 el('tax-stcg').textContent = fmt(d.total_stcg_equity);
                 el('tax-ltcg').textContent = fmt(d.total_ltcg_equity);
                 el('tax-debt').textContent = fmt(d.total_gains_debt);
-                
+
             } catch (e) {
                 console.error("Tax error", e);
                 el('tax-est').textContent = "Error";
@@ -1310,14 +1461,14 @@
                 el('tax-content').style.display = 'block';
             }
         }
-        
+
         async function calculateGoal() {
             const target = parseFloat(el('goal-target').value) || 0;
             const horizon = parseFloat(el('goal-horizon').value) || 0;
             const incCurrent = el('goal-use-portfolio').checked;
-            
+
             if (target <= 0 || horizon <= 0) return;
-            
+
             try {
                 const res = await fetch(API + '/api/goal-strategy', {
                     method: 'POST',
@@ -1329,42 +1480,42 @@
                     })
                 });
                 const d = await res.json();
-                
+
                 if (d.error) throw new Error(d.error);
-                
+
                 el('goal-res-sip').textContent = fmt(d.required_sip_monthly) + ' /mo';
                 el('goal-res-shortfall').textContent = fmt(d.shortfall);
                 el('goal-res-return').textContent = d.assumed_return_pct + '%';
                 el('goal-res-profile').textContent = d.risk_profile;
                 el('goal-res-fv').textContent = fmt(d.future_value_of_current);
                 el('goal-res-strategy').textContent = d.fund_strategy + ` Allocation: ${d.asset_allocation_recommendation.equity}% Eq / ${d.asset_allocation_recommendation.debt}% Dt`;
-                
+
                 if (d.tax_saving_elss_sip > 0) {
                     el('goal-elss-box').style.display = 'block';
                     el('goal-res-elss').textContent = fmt(d.tax_saving_elss_sip);
                 } else {
                     el('goal-elss-box').style.display = 'none';
                 }
-                
+
                 el('goal-result').style.display = 'block';
-                
-            } catch(e) {
+
+            } catch (e) {
                 console.error("Goal plan error", e);
             }
         }
 
         // ── Projections & Simulations ────────────────────────────────────────────────
         let simChart = null;
-        
+
         async function runSimulations() {
             const sip = parseFloat(el('sim-sip').value) || 0;
             const step = parseFloat(el('sim-step').value) || 0;
             const years = parseInt(el('sim-years').value) || 0;
             const ret = parseFloat(el('sim-ret').value) || 0;
             const vol = parseFloat(el('sim-vol').value) || 0;
-            
+
             if (years <= 0) return;
-            
+
             try {
                 const res = await fetch(API + '/api/simulations', {
                     method: 'POST',
@@ -1378,19 +1529,19 @@
                     })
                 });
                 const d = await res.json();
-                
+
                 const mc = d.monte_carlo_analysis;
-                
+
                 // Update text results
                 el('sim-res-med').textContent = fmt(mc.outcomes.median);
                 el('sim-res-bull').textContent = fmt(mc.outcomes.bull_market_90th);
                 el('sim-res-bear').textContent = fmt(mc.outcomes.bear_market_10th);
                 el('sim-results').style.display = 'block';
-                
+
                 // Draw Chart
                 const pd = mc.plot_data;
-                const labels = pd.months.map(m => m % 12 === 0 ? 'Year ' + (m/12) : '');
-                
+                const labels = pd.months.map(m => m % 12 === 0 ? 'Year ' + (m / 12) : '');
+
                 if (simChart) simChart.destroy();
                 simChart = new Chart(el('sim-chart'), {
                     type: 'line',
@@ -1436,30 +1587,30 @@
                         },
                         scales: {
                             x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 10 } },
-                            y: { 
-                                grid: { color: 'rgba(255,255,255,0.05)' }, 
-                                ticks: { color: '#64748b', callback: v => '₹' + (v >= 10000000 ? (v/10000000).toFixed(1) + 'Cr' : (v >= 100000 ? (v/100000).toFixed(1) + 'L' : v)) }
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: '#64748b', callback: v => '₹' + (v >= 10000000 ? (v / 10000000).toFixed(1) + 'Cr' : (v >= 100000 ? (v / 100000).toFixed(1) + 'L' : v)) }
                             }
                         }
                     }
                 });
-                
+
             } catch (e) {
                 console.error("Simulation error", e);
             }
         }
-        
+
         async function loadStressTest() {
             const container = el('stress-results');
             container.innerHTML = '<div class="spinner" style="grid-column:1/-1;margin:20px auto;"></div>';
-            
+
             try {
                 const d = await apiFetch('/api/stress-test');
                 if (d.error) {
                     container.innerHTML = `<p style="color:var(--danger)">${d.error}</p>`;
                     return;
                 }
-                
+
                 container.innerHTML = d.stress_tests.map(st => `
                 <div style="background:var(--card-bg-light);border:1px solid var(--border);border-radius:12px;padding:16px;">
                     <div style="font-weight:600;color:var(--text-primary);margin-bottom:6px;font-size:0.9rem;">${st.scenario}</div>
@@ -1477,7 +1628,7 @@
                     </div>
                 </div>
                 `).join('');
-                
+
             } catch (e) {
                 container.innerHTML = `<p style="color:var(--danger)">Failed to load stress tests</p>`;
             }
@@ -1487,7 +1638,7 @@
         async function calculateRebalance() {
             const tgt = parseFloat(el('rebal-target').value) || 0;
             if (tgt <= 0 || tgt > 100) return;
-            
+
             try {
                 const res = await fetch(API + '/api/rebalance', {
                     method: 'POST',
@@ -1495,16 +1646,16 @@
                     body: JSON.stringify({ target_equity_pct: tgt })
                 });
                 const d = await res.json();
-                
+
                 if (d.error) {
                     alert(d.error); return;
                 }
-                
+
                 el('rebal-curr').textContent = d.current_equity_pct + '%';
-                
+
                 const msgBox = el('rebal-msg');
                 msgBox.textContent = d.message;
-                
+
                 if (!d.action_required) {
                     msgBox.style.background = 'rgba(16, 185, 129, 0.1)';
                     msgBox.style.color = '#10b981';
@@ -1514,12 +1665,12 @@
                     msgBox.style.background = 'rgba(245, 158, 11, 0.1)';
                     msgBox.style.color = '#fbbf24';
                     msgBox.style.border = '1px solid rgba(245, 158, 11, 0.2)';
-                    
+
                     const acts = el('rebal-actions');
                     acts.innerHTML = d.actions.map(a => `
                         <div style="display:flex;justify-content:space-between;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;align-items:center;">
                             <div style="display:flex;align-items:center;gap:12px;">
-                                <span style="padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;background:${a.type==='BUY'?'rgba(16,185,129,0.2)':'rgba(239,68,68,0.2)'};color:${a.type==='BUY'?'#10b981':'#ef4444'}">${a.type}</span>
+                                <span style="padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;background:${a.type === 'BUY' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'};color:${a.type === 'BUY' ? '#10b981' : '#ef4444'}">${a.type}</span>
                                 <span style="font-size:0.85rem;color:var(--text-primary);">${a.asset_class} Funds</span>
                             </div>
                             <strong style="color:var(--text-primary);">${fmt(a.amount)}</strong>
@@ -1527,26 +1678,26 @@
                     `).join('');
                     el('rebal-actions-container').style.display = 'block';
                 }
-                
+
                 el('rebal-result').style.display = 'block';
-                
+
             } catch (e) {
                 console.error("Rebalance error", e);
             }
         }
-        
+
         let divChart = null;
         async function loadDividends() {
             const container = el('div-content');
             container.innerHTML = '<div class="spinner" style="margin:20px auto;"></div>';
-            
+
             try {
                 const d = await apiFetch('/api/dividends');
                 if (d.error) {
                     container.innerHTML = `<p style="color:var(--danger)">${d.error}</p>`;
                     return;
                 }
-                
+
                 if (!d.has_dividends) {
                     container.innerHTML = `
                         <div class="empty-state">
@@ -1557,7 +1708,7 @@
                     `;
                     return;
                 }
-                
+
                 container.innerHTML = `
                     <div style="text-align:center;margin-bottom:20px;">
                         <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;">Total Lifetime Dividends Received</div>
@@ -1567,11 +1718,11 @@
                         <canvas id="div-chart"></canvas>
                     </div>
                 `;
-                
+
                 // Draw Chart
                 const pd = d.chart_data;
                 const ctx = document.getElementById('div-chart');
-                
+
                 if (divChart) divChart.destroy();
                 divChart = new Chart(ctx, {
                     type: 'bar',
@@ -1593,14 +1744,14 @@
                         },
                         scales: {
                             x: { grid: { display: false }, ticks: { color: '#64748b' } },
-                            y: { 
-                                grid: { color: 'rgba(255,255,255,0.05)' }, 
-                                ticks: { color: '#64748b', callback: v => (v >= 1000 ? (v/1000).toFixed(1) + 'k' : v) }
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: '#64748b', callback: v => (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v) }
                             }
                         }
                     }
                 });
-                
+
             } catch (e) {
                 container.innerHTML = `<p style="color:var(--danger)">Failed to load dividends</p>`;
             }
@@ -1620,7 +1771,7 @@
         function handleChatKey(e) {
             if (e.key === 'Enter') sendChatMessage();
         }
-        
+
         // Very basic simple markdown parser for bold and line breaks
         function parseMd(text) {
             return text
@@ -1641,7 +1792,7 @@
             // Show typing
             const typing = el('chat-typing');
             typing.classList.add('active');
-            
+
             // Auto scroll to bottom
             const body = el('chat-body');
             body.appendChild(typing);
@@ -1653,9 +1804,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: msg })
                 });
-                
+
                 if (!res.ok) throw new Error('Failed to get response');
-                
+
                 const data = await res.json();
                 typing.classList.remove('active');
                 addCommentLine('ai', data.reply);
@@ -1669,13 +1820,13 @@
             const body = el('chat-body');
             const div = document.createElement('div');
             div.className = `chat-msg ${role}`;
-            
+
             if (role === 'ai') {
                 div.innerHTML = parseMd(text);
             } else {
                 div.textContent = text;
             }
-            
+
             body.insertBefore(div, el('chat-typing'));
             body.scrollTop = body.scrollHeight;
         }
@@ -1690,9 +1841,9 @@
 
             // ── Reset state ──
             el('fm-name').textContent = 'Loading…';
-            ['fm-category','fm-benchmark','fm-aum','fm-nav','fm-expense','fm-exit-load','fm-turnover',
-             'fm-sharpe','fm-sortino','fm-beta','fm-alpha','fm-stddev','fm-drawdown','fm-volatility','fm-bench-label',
-             'fm-1y','fm-3y','fm-5y','fm-10y'].forEach(id => { if (el(id)) el(id).textContent = '—'; });
+            ['fm-category', 'fm-benchmark', 'fm-aum', 'fm-nav', 'fm-expense', 'fm-exit-load', 'fm-turnover',
+                'fm-sharpe', 'fm-sortino', 'fm-beta', 'fm-alpha', 'fm-stddev', 'fm-drawdown', 'fm-volatility', 'fm-bench-label',
+                'fm-1y', 'fm-3y', 'fm-5y', 'fm-10y'].forEach(id => { if (el(id)) el(id).textContent = '—'; });
             el('fm-sectors').innerHTML = '<div class="empty-state">Loading…</div>';
             el('fm-holdings-body').innerHTML = '<tr><td colspan="3"><div class="spinner" style="margin:20px auto;"></div></td></tr>';
             el('fm-sip-empty').style.display = 'none';
@@ -1707,8 +1858,8 @@
                 el('fm-benchmark').textContent = d.benchmark || '—';
 
                 const fmtCr = v => v != null ? `₹${(+v).toLocaleString('en-IN')} Cr` : 'N/A';
-                el('fm-aum').textContent     = fmtCr(d.aum_cr);
-                el('fm-nav').textContent     = d.current_nav != null ? `₹${(+d.current_nav).toFixed(4)}` + (d.nav_date ? ` (${d.nav_date})` : '') : 'N/A';
+                el('fm-aum').textContent = fmtCr(d.aum_cr);
+                el('fm-nav').textContent = d.current_nav != null ? `₹${(+d.current_nav).toFixed(4)}` + (d.nav_date ? ` (${d.nav_date})` : '') : 'N/A';
                 el('fm-expense').textContent = d.expense_ratio != null ? `${d.expense_ratio}%` : 'N/A';
                 el('fm-exit-load').textContent = d.exit_load || 'N/A';
                 el('fm-turnover').textContent = d.portfolio_turnover != null ? `${d.portfolio_turnover}%` : 'N/A';
@@ -1716,12 +1867,12 @@
                 // ── ② Quant Metrics ──
                 const fmtR = (v, suffix = '') => v != null ? `${(+v).toFixed(2)}${suffix}` : 'N/A';
                 const r = d.risk || {};
-                el('fm-sharpe').textContent    = fmtR(r.sharpe);
-                el('fm-sortino').textContent   = fmtR(r.sortino);
-                el('fm-beta').textContent      = fmtR(r.beta);
-                el('fm-alpha').textContent     = fmtR(r.alpha, '%');
-                el('fm-stddev').textContent    = fmtR(r.volatility, '%');
-                el('fm-drawdown').textContent  = r.max_drawdown_pct != null ? `${(+r.max_drawdown_pct).toFixed(2)}%` : 'N/A';
+                el('fm-sharpe').textContent = fmtR(r.sharpe);
+                el('fm-sortino').textContent = fmtR(r.sortino);
+                el('fm-beta').textContent = fmtR(r.beta);
+                el('fm-alpha').textContent = fmtR(r.alpha, '%');
+                el('fm-stddev').textContent = fmtR(r.volatility, '%');
+                el('fm-drawdown').textContent = r.max_drawdown_pct != null ? `${(+r.max_drawdown_pct).toFixed(2)}%` : 'N/A';
                 el('fm-volatility').textContent = fmtR(r.volatility, '%');
                 el('fm-bench-label').textContent = r.benchmark_name || d.benchmark || '—';
 
@@ -1732,15 +1883,15 @@
                 const ret = d.returns || {};
                 const fmtRet = v => v != null ? `${(+v).toFixed(2)}%` : 'N/A';
                 const setRetColor = (id, v) => {
-                    const e = el(id); 
+                    const e = el(id);
                     if (e) {
                         e.textContent = fmtRet(v);
                         if (v != null) e.style.color = v >= 0 ? 'var(--success)' : 'var(--danger)';
                     }
                 };
-                setRetColor('fm-1y',  ret['1Y']);
-                setRetColor('fm-3y',  ret['3Y']);
-                setRetColor('fm-5y',  ret['5Y']);
+                setRetColor('fm-1y', ret['1Y']);
+                setRetColor('fm-3y', ret['3Y']);
+                setRetColor('fm-5y', ret['5Y']);
                 setRetColor('fm-10y', ret['10Y']);
 
                 const bRet = d.benchmark_cagr || {};
@@ -1757,7 +1908,7 @@
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px;">
                             <div style="width:160px;font-size:0.8rem;color:var(--text-secondary);flex-shrink:0;text-align:right;">${s.sector}</div>
                             <div style="flex:1;background:var(--bg-primary);border-radius:4px;height:14px;overflow:hidden;">
-                                <div style="width:${(s.weight/maxW*100).toFixed(1)}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--info));border-radius:4px;transition:width 0.5s ease;"></div>
+                                <div style="width:${(s.weight / maxW * 100).toFixed(1)}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--info));border-radius:4px;transition:width 0.5s ease;"></div>
                             </div>
                             <div style="width:44px;font-size:0.8rem;font-weight:700;color:var(--info);">${s.weight.toFixed(1)}%</div>
                         </div>`).join('');
@@ -1814,7 +1965,7 @@
                         <td class="num" style="text-align:right;color:var(--info);padding:8px 10px;">${h.weight.toFixed(2)}%</td>
                         <td style="padding:8px 10px;min-width:90px;">
                             <div style="background:var(--bg-primary);border-radius:3px;height:8px;">
-                                <div style="width:${(h.weight/maxHW*100).toFixed(1)}%;height:100%;background:var(--accent);border-radius:3px;"></div>
+                                <div style="width:${(h.weight / maxHW * 100).toFixed(1)}%;height:100%;background:var(--accent);border-radius:3px;"></div>
                             </div>
                         </td>
                     </tr>`).join('');
@@ -1873,7 +2024,7 @@
             empty.style.display = 'none';
 
             const gainColor = v => v == null ? 'var(--text-muted)' : v >= 0 ? 'var(--success)' : 'var(--danger)';
-            const gainIcon  = v => v == null ? '' : v >= 0 ? '▲' : '▼';
+            const gainIcon = v => v == null ? '' : v >= 0 ? '▲' : '▼';
 
             grid.innerHTML = funds.map(h => {
                 const xirr = h.xirr != null ? `${gainIcon(h.xirr)}&thinsp;${Math.abs(h.xirr).toFixed(2)}%` : 'N/A';
@@ -1881,7 +2032,7 @@
                 const val = h.current_value > 0 ? `₹${h.current_value.toLocaleString('en-IN')}` : '₹0';
                 const inv = h.invested > 0 ? `₹${h.invested.toLocaleString('en-IN')}` : '₹0';
                 const xirrColor = gainColor(h.xirr);
-                const gainClr  = gainColor(h.gain_pct);
+                const gainClr = gainColor(h.gain_pct);
 
                 return `<div class="fund-browser-card" onclick="openFundModal('${h.isin}')" title="Click for deep-dive details">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
@@ -1925,18 +2076,26 @@
     </div>
 
     <!-- ── Authentication Gate ─────────────────────────────────────────── -->
-    <div id="login-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10, 15, 27, 0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:9999;align-items:center;justify-content:center;flex-direction:column;">
-        <div style="background:var(--card-bg);border:1px solid rgba(255,255,255,0.1);padding:40px;border-radius:24px;width:100%;max-width:400px;text-align:center;box-shadow:0 30px 60px rgba(0,0,0,0.5);">
+    <div id="login-modal"
+        style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10, 15, 27, 0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:9999;align-items:center;justify-content:center;flex-direction:column;">
+        <div
+            style="background:var(--card-bg);border:1px solid rgba(255,255,255,0.1);padding:40px;border-radius:24px;width:100%;max-width:400px;text-align:center;box-shadow:0 30px 60px rgba(0,0,0,0.5);">
             <div style="font-size:2.5rem;margin-bottom:10px;">🔒</div>
             <h2 style="color:var(--text-primary);margin-bottom:8px;font-size:1.4rem;">Private Portfolio</h2>
-            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:30px;line-height:1.5;">Enter the master password to access this system.</p>
-            
-            <input type="password" id="auth-password" placeholder="Master Password" style="width:100%;padding:14px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);color:white;font-size:1rem;margin-bottom:20px;outline:none;transition:all 0.2s;" onfocus="this.style.border='1px solid var(--accent)'" onblur="this.style.border='1px solid rgba(255,255,255,0.1)'">
-            
-            <button onclick="submitLogin()" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg, var(--accent), var(--accent-light));border:none;color:white;font-weight:700;font-size:1rem;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;">
+            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:30px;line-height:1.5;">Enter the master
+                password to access this system.</p>
+
+            <input type="password" id="auth-password" placeholder="Master Password"
+                style="width:100%;padding:14px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);color:white;font-size:1rem;margin-bottom:20px;outline:none;transition:all 0.2s;"
+                onfocus="this.style.border='1px solid var(--accent)'"
+                onblur="this.style.border='1px solid rgba(255,255,255,0.1)'">
+
+            <button onclick="submitLogin()"
+                style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg, var(--accent), var(--accent-light));border:none;color:white;font-weight:700;font-size:1rem;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;">
                 Unlock Dashboard
             </button>
-            <p id="login-error" style="color:#f87171;font-size:0.8rem;margin-top:15px;display:none;">Incorrect password</p>
+            <p id="login-error" style="color:#f87171;font-size:0.8rem;margin-top:15px;display:none;">Incorrect password
+            </p>
         </div>
     </div>
 
@@ -1949,7 +2108,7 @@
             const pwd = document.getElementById('auth-password').value;
             const btn = document.querySelector('#login-modal button');
             const err = document.getElementById('login-error');
-            
+
             err.style.display = 'none';
             btn.textContent = 'Verifying...';
             btn.style.opacity = '0.7';
@@ -1965,7 +2124,7 @@
 
                 const data = await res.json();
                 localStorage.setItem('mf_token', data.token);
-                
+
                 // Hide modal and restart initialization to fetch data natively
                 document.getElementById('login-modal').style.display = 'none';
                 init();
@@ -1984,4 +2143,5 @@
         });
     </script>
 </body>
+
 </html>
