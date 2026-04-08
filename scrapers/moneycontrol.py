@@ -71,13 +71,15 @@ class MoneyControlScraper:
         """Basic fund metrics like AUM, expense ratio from MC."""
         # Also fetch snapshot values
         snap = self._fetch_mc_data("fundamentals", isin) or {}
+        logger.info(f"[MC Debug] Raw fundamentals response keys for {isin}: {list(snap.keys())}")
+        logger.info(f"[MC Debug] Raw fundamentals sample for {isin}: { {k: snap[k] for k in list(snap.keys())[:15]} }")
         return {
-            "price_sale": snap.get("price_sale"),
-            "cat_avg_price_sale": snap.get("cat_avg_price_sale"),
-            "price_cash_flow": snap.get("price_cash_flow"),
-            "cat_avg_price_cash_flow": snap.get("cat_avg_price_cash_flow"),
-            "dividend_yield": snap.get("dividend_yield"),
-            "cat_avg_dividend_yield": snap.get("cat_avg_dividend_yield"),
-            "roe": snap.get("roe"),
-            "cat_avg_roe": snap.get("cat_avg_roe")
+            "price_sale": snap.get("price_sale") or snap.get("priceSale") or snap.get("ps"),
+            "cat_avg_price_sale": snap.get("cat_avg_price_sale") or snap.get("catAvgPriceSale"),
+            "price_cash_flow": snap.get("price_cash_flow") or snap.get("priceCashFlow") or snap.get("pcf"),
+            "cat_avg_price_cash_flow": snap.get("cat_avg_price_cash_flow") or snap.get("catAvgPriceCashFlow"),
+            "dividend_yield": snap.get("dividend_yield") or snap.get("dividendYield") or snap.get("dy"),
+            "cat_avg_dividend_yield": snap.get("cat_avg_dividend_yield") or snap.get("catAvgDividendYield"),
+            "roe": snap.get("roe") or snap.get("ROE"),
+            "cat_avg_roe": snap.get("cat_avg_roe") or snap.get("catAvgRoe"),
         }
