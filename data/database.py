@@ -133,6 +133,13 @@ def initialize_database():
         )
     ''')
     
+    # Graceful Migration: Add columns to existing cache tables if they were built before the Fundamentals Update
+    for col in ["price_sale", "cat_avg_price_sale", "price_cash_flow", "cat_avg_price_cash_flow", "dividend_yield", "cat_avg_dividend_yield", "roe", "cat_avg_roe"]:
+        try:
+            cursor.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN {col} TEXT")
+        except Exception:
+            pass
+    
     # Fund Risk
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fund_risk (
