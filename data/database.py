@@ -133,10 +133,11 @@ def initialize_database():
         )
     ''')
     
-    # Graceful Migration: Add columns to existing cache tables if they were built before the Fundamentals Update
+    # Graceful Migration: Use IF NOT EXISTS (Postgres-native) so it never aborts the transaction
     for col in ["price_sale", "cat_avg_price_sale", "price_cash_flow", "cat_avg_price_cash_flow", "dividend_yield", "cat_avg_dividend_yield", "roe", "cat_avg_roe"]:
         try:
-            cursor.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN {col} TEXT")
+            cursor.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN IF NOT EXISTS {col} TEXT")
+            conn.commit()
         except Exception:
             pass
     
@@ -362,10 +363,10 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
             c2 = conn2.cursor()
             for col in ["price_sale", "cat_avg_price_sale", "price_cash_flow", "cat_avg_price_cash_flow", "dividend_yield", "cat_avg_dividend_yield", "roe", "cat_avg_roe"]:
                 try:
-                    c2.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN {col} TEXT")
+                    c2.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN IF NOT EXISTS {col} TEXT")
+                    conn2.commit()
                 except Exception:
-                    pass
-            conn2.commit()
+                    conn2.rollback()
             conn2.close()
             # Retry the full insert after migration
             conn3 = get_connection()
