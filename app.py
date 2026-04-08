@@ -41,12 +41,16 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 def startup_event():
-    logger.info("Initializing database schemas...")
-    try:
-        initialize_database()
-        logger.info("Database schemas verified successfully!")
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+    import threading
+    def _init():
+        logger.info("Initializing database schemas in background...")
+        try:
+            initialize_database()
+            logger.info("Database schemas verified successfully!")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+    t = threading.Thread(target=_init, daemon=True)
+    t.start()
 
 # Allow frontend to call API
 app.add_middleware(
