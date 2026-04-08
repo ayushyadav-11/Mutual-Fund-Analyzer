@@ -855,10 +855,25 @@ async def get_fund_details(isin: str):
             except Exception:
                 pass
                 
-        mfapi_data = {
+        fundms = {
             "aum_cr": mc_fundamentals["aum_cr"],
             "expense_ratio": mc_fundamentals["expense_ratio"],
             "exit_load": mc_fundamentals["exit_load"],
+            "portfolio_turnover": portfolio_turnover,
+            "price_sale": mc_fundamentals.get("price_sale"),
+            "cat_avg_price_sale": mc_fundamentals.get("cat_avg_price_sale"),
+            "price_cash_flow": mc_fundamentals.get("price_cash_flow"),
+            "cat_avg_price_cash_flow": mc_fundamentals.get("cat_avg_price_cash_flow"),
+            "dividend_yield": mc_fundamentals.get("dividend_yield"),
+            "cat_avg_dividend_yield": mc_fundamentals.get("cat_avg_dividend_yield"),
+            "roe": mc_fundamentals.get("roe"),
+            "cat_avg_roe": mc_fundamentals.get("cat_avg_roe")
+        }
+
+        mfapi_data = {
+            "aum_cr": fundms["aum_cr"],
+            "expense_ratio": fundms["expense_ratio"],
+            "exit_load": fundms["exit_load"],
             "current_nav": None,
             "nav_date": None,
         }
@@ -866,7 +881,7 @@ async def get_fund_details(isin: str):
         # Save to Cache
         cache_fund_deep_dive(
             isin=isin,
-            fundamentals={"aum_cr": mfapi_data["aum_cr"], "expense_ratio": mfapi_data["expense_ratio"], "exit_load": mfapi_data["exit_load"], "portfolio_turnover": portfolio_turnover},
+            fundamentals=fundms,
             risk=risk_data,
             returns=returns_data,
             bench_returns=benchmark_returns,
