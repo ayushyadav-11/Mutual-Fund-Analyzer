@@ -842,7 +842,7 @@
                             <td class="success" id="fm-cat-dy">—</td>
                         </tr>
                         <tr>
-                            <td>Sales Growth</td>
+                            <td>ROE</td>
                             <td id="fm-sg">—</td>
                             <td id="fm-cat-sg">—</td>
                         </tr>
@@ -1923,6 +1923,10 @@
 
                 const fmtCr = v => v != null ? `₹${(+v).toLocaleString('en-IN')} Cr` : 'N/A';
                 const f = d.fundamentals || {};
+                el('fm-pe').textContent = f.pe || '—';
+                el('fm-cat-pe').textContent = f.cat_avg_pe || '—';
+                el('fm-pb').textContent = f.pb || '—';
+                el('fm-cat-pb').textContent = f.cat_avg_pb || '—';
                 el('fm-ps').textContent = f.price_sale || 'N/A';
                 el('fm-cat-ps').textContent = f.cat_avg_price_sale || 'N/A';
                 el('fm-pcf').textContent = f.price_cash_flow || 'N/A';

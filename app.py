@@ -780,16 +780,20 @@ async def get_fund_details(isin: str):
         sector_allocation = cached_fund.get("sectors", [])
         
         fundms = cached_fund.get("fundamentals", {})
-        mfapi_data = {
-            "aum_cr": fundms.get("aum_cr"),
-            "expense_ratio": fundms.get("expense_ratio"),
-            "exit_load": fundms.get("exit_load"),
-            "current_nav": None,
-            "nav_date": None,
-        }
-        portfolio_turnover = fundms.get("portfolio_turnover")
+        # Stale cache detection: if price_sale is missing, this is an old cache entry — re-fetch
+        if fundms.get("price_sale") is None and fundms.get("pe") is None:
+            cached_fund = None  # Force cache miss path below
+        else:
+            mfapi_data = {
+                "aum_cr": fundms.get("aum_cr"),
+                "expense_ratio": fundms.get("expense_ratio"),
+                "exit_load": fundms.get("exit_load"),
+                "current_nav": None,
+                "nav_date": None,
+            }
+            portfolio_turnover = fundms.get("portfolio_turnover")
 
-    else:
+    if not cached_fund:
         # ── 3. Moneycontrol & Morningstar Fetching (Cache Miss) ──────────────────
         from scrapers.morningstar import MorningstarScraper
         from scrapers.moneycontrol import MoneyControlScraper
@@ -864,6 +868,10 @@ async def get_fund_details(isin: str):
             "expense_ratio": mc_fundamentals["expense_ratio"],
             "exit_load": mc_fundamentals["exit_load"],
             "portfolio_turnover": portfolio_turnover,
+            "pe": mc_fundamentals.get("pe"),
+            "cat_avg_pe": mc_fundamentals.get("cat_avg_pe"),
+            "pb": mc_fundamentals.get("pb"),
+            "cat_avg_pb": mc_fundamentals.get("cat_avg_pb"),
             "price_sale": mc_fundamentals.get("price_sale"),
             "cat_avg_price_sale": mc_fundamentals.get("cat_avg_price_sale"),
             "price_cash_flow": mc_fundamentals.get("price_cash_flow"),
