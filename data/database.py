@@ -356,12 +356,17 @@ def get_cached_fund_deep_dive(isin: str, max_age_hours=1) -> Optional[dict]:
         return None
         
     try:
-        last_updated = datetime.fromisoformat(row['last_updated_at'])
+        val = row['last_updated_at']
+        if isinstance(val, str):
+            last_updated = datetime.fromisoformat(val)
+        else:
+            last_updated = val
+            
         age = (datetime.now() - last_updated).total_seconds() / 3600
         if age > max_age_hours:
             conn.close()
             return None # Stale
-    except ValueError:
+    except (ValueError, TypeError):
         conn.close()
         return None
 
