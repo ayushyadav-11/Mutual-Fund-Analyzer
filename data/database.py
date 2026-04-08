@@ -353,8 +353,56 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
             
         conn.commit()
     except Exception as e:
-        logger.error(f"Failed to cache deep dive for {isin}: {e}")
         conn.rollback()
+        err_str = str(e).lower()
+        # Self-healing migration: if Postgres reports a missing column, add it and retry
+        if "column" in err_str and "does not exist" in err_str:
+            logger.warning(f"Schema migration required for {isin}, running ALTER TABLE and retrying: {e}")
+            conn2 = get_connection()
+            c2 = conn2.cursor()
+            for col in ["price_sale", "cat_avg_price_sale", "price_cash_flow", "cat_avg_price_cash_flow", "dividend_yield", "cat_avg_dividend_yield", "roe", "cat_avg_roe"]:
+                try:
+                    c2.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN {col} TEXT")
+                except Exception:
+                    pass
+            conn2.commit()
+            conn2.close()
+            # Retry the full insert after migration
+            conn3 = get_connection()
+            c3 = conn3.cursor()
+            try:
+                c3.execute('''
+                    INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, price_sale, cat_avg_price_sale, price_cash_flow, cat_avg_price_cash_flow, dividend_yield, cat_avg_dividend_yield, roe, cat_avg_roe, last_updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(isin) DO UPDATE SET
+                        aum_cr=excluded.aum_cr,
+                        expense_ratio=excluded.expense_ratio,
+                        exit_load=excluded.exit_load,
+                        portfolio_turnover=excluded.portfolio_turnover,
+                        price_sale=excluded.price_sale,
+                        cat_avg_price_sale=excluded.cat_avg_price_sale,
+                        price_cash_flow=excluded.price_cash_flow,
+                        cat_avg_price_cash_flow=excluded.cat_avg_price_cash_flow,
+                        dividend_yield=excluded.dividend_yield,
+                        cat_avg_dividend_yield=excluded.cat_avg_dividend_yield,
+                        roe=excluded.roe,
+                        cat_avg_roe=excluded.cat_avg_roe,
+                        last_updated_at=excluded.last_updated_at
+                ''', (
+                    isin, fundamentals.get("aum_cr"), fundamentals.get("expense_ratio"), fundamentals.get("exit_load"), fundamentals.get("portfolio_turnover"),
+                    fundamentals.get("price_sale"), fundamentals.get("cat_avg_price_sale"), fundamentals.get("price_cash_flow"), fundamentals.get("cat_avg_price_cash_flow"),
+                    fundamentals.get("dividend_yield"), fundamentals.get("cat_avg_dividend_yield"), fundamentals.get("roe"), fundamentals.get("cat_avg_roe"),
+                    now
+                ))
+                conn3.commit()
+                logger.info(f"Successfully cached fundamentals for {isin} after schema migration.")
+            except Exception as e2:
+                logger.error(f"Retry cache also failed for {isin}: {e2}")
+                conn3.rollback()
+            finally:
+                conn3.close()
+        else:
+            logger.error(f"Failed to cache deep dive for {isin}: {e}")
     finally:
         conn.close()
 
