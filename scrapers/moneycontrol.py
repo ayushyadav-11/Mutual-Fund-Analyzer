@@ -5,6 +5,8 @@ from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
+DEBUG_BYPASS_MONEYCONTROL_CACHE = True
+
 class MoneyControlScraper:
     """Scrapes quantitative metrics from MoneyControl's internal API with 24h Redis caching."""
     
@@ -17,12 +19,14 @@ class MoneyControlScraper:
     def _fetch_mc_data(self, endpoint: str, isin: str) -> Optional[Dict[str, Any]]:
         """Generic wrapper with caching (1 day TTL) and fallback to live fetch."""
         cache_key = f"mc:fund:{isin}:{endpoint}"
-        
-        # 1. Check Redis/Memory cache
-        cached_data = get_cached(cache_key)
-        if cached_data is not None:
-            logger.debug(f"Cache hit for {cache_key}")
-            return cached_data
+
+        # Debug toggle: bypass MoneyControl endpoint cache to inspect live payloads.
+        if not DEBUG_BYPASS_MONEYCONTROL_CACHE:
+            # 1. Check Redis/Memory cache
+            cached_data = get_cached(cache_key)
+            if cached_data is not None:
+                logger.debug(f"Cache hit for {cache_key}")
+                return cached_data
 
         # 2. Live Fetch
         logger.info(f"Live fetch from MoneyControl: {endpoint} for {isin}")
@@ -39,7 +43,7 @@ class MoneyControlScraper:
                 payload = data.get("data", {})
                 
                 # 3. Save to cache with 24 hour TTL (86400 seconds)
-                if payload:
+                if payload and not DEBUG_BYPASS_MONEYCONTROL_CACHE:
                     set_cached(cache_key, payload, ttl_seconds=86400)
                 return payload
             else:
@@ -73,13 +77,4 @@ class MoneyControlScraper:
         snap = self._fetch_mc_data("fundamentals", isin) or {}
         logger.info(f"[MC Debug] Raw fundamentals response keys for {isin}: {list(snap.keys())}")
         logger.info(f"[MC Debug] Raw fundamentals sample for {isin}: { {k: snap[k] for k in list(snap.keys())[:15]} }")
-        return {
-            "price_sale": snap.get("price_sale") or snap.get("priceSale") or snap.get("ps"),
-            "cat_avg_price_sale": snap.get("cat_avg_price_sale") or snap.get("catAvgPriceSale"),
-            "price_cash_flow": snap.get("price_cash_flow") or snap.get("priceCashFlow") or snap.get("pcf"),
-            "cat_avg_price_cash_flow": snap.get("cat_avg_price_cash_flow") or snap.get("catAvgPriceCashFlow"),
-            "dividend_yield": snap.get("dividend_yield") or snap.get("dividendYield") or snap.get("dy"),
-            "cat_avg_dividend_yield": snap.get("cat_avg_dividend_yield") or snap.get("catAvgDividendYield"),
-            "roe": snap.get("roe") or snap.get("ROE"),
-            "cat_avg_roe": snap.get("cat_avg_roe") or snap.get("catAvgRoe"),
-        }
+        return snap

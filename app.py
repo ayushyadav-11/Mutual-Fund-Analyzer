@@ -39,6 +39,9 @@ app = FastAPI(
 )
 logger = logging.getLogger(__name__)
 
+DEBUG_BYPASS_DEEP_DIVE_CACHE = True
+DEBUG_DISABLE_FUNDAMENTALS_FALLBACK = True
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -773,7 +776,9 @@ async def get_fund_details(isin: str):
     benchmark_symbol = scheme["benchmark"]
 
     # ── 2. Check SQLite Cache (1-Hour Expiration) ─────────────────────────────
-    cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
+    # Debug toggle: keep the live path hot while we inspect fundamentals parsing.
+    # cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
+    cached_fund = None if DEBUG_BYPASS_DEEP_DIVE_CACHE else get_cached_fund_deep_dive(isin, max_age_hours=1)
     
     if cached_fund:
         fallback_benchmark = cached_fund.get("risk", {}).get("benchmark_name") or scheme["benchmark"]
@@ -858,11 +863,11 @@ async def get_fund_details(isin: str):
                     for asset, weight in sorted(raw_portfolio.items(), key=lambda item: item[1], reverse=True)
                 ][:20]
                 sector_allocation = fund_info.get("sector_allocation", []) or []
-                if mc_fundamentals["aum_cr"] is None:
+                if not DEBUG_DISABLE_FUNDAMENTALS_FALLBACK and mc_fundamentals["aum_cr"] is None:
                     mc_fundamentals["aum_cr"] = fund_info.get("aum_cr")
-                if mc_fundamentals["expense_ratio"] is None:
+                if not DEBUG_DISABLE_FUNDAMENTALS_FALLBACK and mc_fundamentals["expense_ratio"] is None:
                     mc_fundamentals["expense_ratio"] = fund_info.get("expense_ratio")
-                if portfolio_turnover is None:
+                if not DEBUG_DISABLE_FUNDAMENTALS_FALLBACK and portfolio_turnover is None:
                     portfolio_turnover = fund_info.get("portfolio_turnover_pct")
             except Exception:
                 pass
@@ -893,45 +898,85 @@ async def get_fund_details(isin: str):
             "current_nav": None,
             "nav_date": None,
         }
-        
-        # Save to Cache
-        cache_fund_deep_dive(
-            isin=isin,
-            fundamentals=fundms,
-            risk=risk_data,
-            returns=returns_data,
-            bench_returns=benchmark_returns,
-            holdings=sorted_holdings,
-            sectors=sector_allocation
-        )
 
+        logger.info("Parsed Moneycontrol fundamentals for %s: %s", isin, fundms)
+
+        # Debug toggle: skip cache writes so each request reflects live scraper output.
+        if not DEBUG_BYPASS_DEEP_DIVE_CACHE:
+            cache_fund_deep_dive(
+                isin=isin,
+                fundamentals=fundms,
+                risk=risk_data,
+                returns=returns_data,
+                bench_returns=benchmark_returns,
+                holdings=sorted_holdings,
+                sectors=sector_allocation
+            )
+
+
+    # Seed NAV from locally stored history so the UI does not go blank when live fetch fails.
+    navs = get_nav_series(isin)
+    if navs:
+        latest_nav = navs[-1]
+        try:
+            mfapi_data["current_nav"] = float(latest_nav["nav"])
+            mfapi_data["nav_date"] = latest_nav["date"]
+        except (TypeError, ValueError, KeyError):
+            pass
 
     try:
+        import requests as _requests, time as _time
+        from data.database import insert_or_update_scheme as _insert_or_update_scheme
+
+        def _resolve_scheme_code_for_nav(code, fund_name, fund_isin):
+            if code:
+                return code
+
+            try:
+                query = _requests.utils.quote((fund_name or "")[:60])
+                r = _requests.get(f"https://api.mfapi.in/mf/search?q={query}", timeout=10)
+                r.raise_for_status()
+                results = r.json() or []
+                for entry in results:
+                    if fund_isin in (entry.get("isinGrowth"), entry.get("isinDivReinvestment")):
+                        return entry.get("schemeCode")
+                if results:
+                    return results[0].get("schemeCode")
+            except Exception:
+                return None
+            return None
+
+        def _fetch_nav(code):
+            for attempt in range(3):
+                try:
+                    r = _requests.get(f"https://api.mfapi.in/mf/{code}", timeout=10)
+                    r.raise_for_status()
+                    return r.json()
+                except Exception:
+                    if attempt < 2:
+                        _time.sleep(1)
+            raise Exception(f"mfapi failed for scheme {code} after 3 attempts")
+
+        resolved_scheme_code = await asyncio.get_event_loop().run_in_executor(
+            None, _resolve_scheme_code_for_nav, scheme_code, scheme_name, isin
+        )
+        if resolved_scheme_code and resolved_scheme_code != scheme_code:
+            scheme_code = resolved_scheme_code
+            await asyncio.get_event_loop().run_in_executor(
+                None, _insert_or_update_scheme, isin, scheme_name, str(scheme_code)
+            )
+
         if scheme_code:
-            import requests as _requests, time as _time
-
-            def _fetch_nav(code):
-                for attempt in range(3):
-                    try:
-                        r = _requests.get(f"https://api.mfapi.in/mf/{code}", timeout=10)
-                        r.raise_for_status()
-                        return r.json()
-                    except Exception:
-                        if attempt < 2:
-                            _time.sleep(1)
-                raise Exception(f"mfapi failed for scheme {code} after 3 attempts")
-
             detail = await asyncio.get_event_loop().run_in_executor(None, _fetch_nav, scheme_code)
             nav_data = detail.get("data", [])
             if nav_data:
                 mfapi_data["current_nav"] = float(nav_data[0]["nav"])
-                mfapi_data["nav_date"]    = nav_data[0]["date"]
+                mfapi_data["nav_date"] = nav_data[0]["date"]
     except Exception as _nav_err:
         import logging as _log
         _log.getLogger("app").warning("NAV fetch failed for %s: %s", isin, _nav_err)
 
     # ── 4. Derived XIRR charting is preserved for SIP analysis only ───────────
-    navs = get_nav_series(isin)
     sip_chart: dict = {}
     try:
         holding = next((h for h in session_data.get("holdings", []) if h.get("isin") == isin), None) if session_data else None
@@ -1348,6 +1393,61 @@ def _mc_extract_fundamentals(mc_fund: Any) -> dict:
         "expense_ratio": _mc_to_float(_mc_find_first(mc_fund, "expense_ratio", "exp_ratio", "expense")),
         "exit_load": _mc_find_first(mc_fund, "exit_load", "exitload"),
         "portfolio_turnover": _mc_to_float(_mc_find_first(mc_fund, "portfolio_turnover_pct", "portfolio_turnover", "turnover_ratio", "turnover")),
+        "pe": _mc_extract_metric_value(
+            mc_fund, "pe", "p_e", "p/e", "price_earnings", "price_to_earnings", "price_earning"
+        ),
+        "cat_avg_pe": _mc_extract_metric_value(
+            mc_fund, "cat_avg_pe", "category_avg_pe", "category_average_pe", "catpe", "category_pe"
+        ),
+        "pb": _mc_extract_metric_value(
+            mc_fund, "pb", "p_b", "p/b", "price_book", "price_to_book", "price_book_value"
+        ),
+        "cat_avg_pb": _mc_extract_metric_value(
+            mc_fund, "cat_avg_pb", "category_avg_pb", "category_average_pb", "catpb", "category_pb"
+        ),
+        "price_sale": _mc_extract_metric_value(
+            mc_fund, "price_sale", "price_sales", "price_to_sale", "price_to_sales", "priceSale", "ps"
+        ),
+        "cat_avg_price_sale": _mc_extract_metric_value(
+            mc_fund,
+            "cat_avg_price_sale",
+            "category_avg_price_sale",
+            "category_average_price_sale",
+            "catAvgPriceSale",
+            "category_price_sale",
+        ),
+        "price_cash_flow": _mc_extract_metric_value(
+            mc_fund,
+            "price_cash_flow",
+            "price_cashflow",
+            "price_to_cash_flow",
+            "price_to_cashflow",
+            "priceCashFlow",
+            "pcf",
+        ),
+        "cat_avg_price_cash_flow": _mc_extract_metric_value(
+            mc_fund,
+            "cat_avg_price_cash_flow",
+            "category_avg_price_cash_flow",
+            "category_average_price_cash_flow",
+            "catAvgPriceCashFlow",
+            "category_price_cash_flow",
+        ),
+        "dividend_yield": _mc_extract_metric_value(
+            mc_fund, "dividend_yield", "dividendYield", "div_yield", "dy"
+        ),
+        "cat_avg_dividend_yield": _mc_extract_metric_value(
+            mc_fund,
+            "cat_avg_dividend_yield",
+            "category_avg_dividend_yield",
+            "category_average_dividend_yield",
+            "catAvgDividendYield",
+            "category_dividend_yield",
+        ),
+        "roe": _mc_extract_metric_value(mc_fund, "roe", "ROE", "return_on_equity"),
+        "cat_avg_roe": _mc_extract_metric_value(
+            mc_fund, "cat_avg_roe", "category_avg_roe", "category_average_roe", "catAvgRoe", "category_roe"
+        ),
     }
 
 
