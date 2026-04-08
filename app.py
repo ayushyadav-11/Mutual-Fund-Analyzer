@@ -39,6 +39,10 @@ app = FastAPI(
 )
 logger = logging.getLogger(__name__)
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 @app.on_event("startup")
 def startup_event():
     import threading
