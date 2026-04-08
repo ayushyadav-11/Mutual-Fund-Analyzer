@@ -33,14 +33,27 @@ def get_cached(key: str) -> dict | None:
             if val:
                 return json.loads(val)
         else:
-            entry = _memory_cache.get(key)
-            if not entry:
-                return None
-            expires_at = entry.get("expires_at")
-            if expires_at is not None and expires_at <= time.time():
-                _memory_cache.pop(key, None)
-                return None
-            return entry.get("data")
+            # Fallback to Database Cache (PostgreSQL/SQLite)
+            from data.database import get_connection
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute('SELECT value_json, expires_at FROM kv_cache WHERE key = ?', (key,))
+            row = c.fetchone()
+            conn.close()
+            
+            if row:
+                expires_at = row['expires_at']
+                if expires_at is not None and expires_at <= time.time():
+                    # Delete stale cache natively in the background thread (optional, but cleaner)
+                    conn = get_connection()
+                    c = conn.cursor()
+                    c.execute('DELETE FROM kv_cache WHERE key = ?', (key,))
+                    conn.commit()
+                    conn.close()
+                    return None
+                return json.loads(row['value_json'])
+            
+            return None
     except Exception as e:
         logger.error(f"Cache GET error for key {key}: {e}")
     return None
@@ -53,10 +66,21 @@ def set_cached(key: str, data: dict, ttl_seconds: int = 86400):
         if _USE_REDIS and _redis_client:
             _redis_client.setex(key, ttl_seconds, val)
         else:
-            _memory_cache[key] = {
-                "data": data,
-                "expires_at": time.time() + ttl_seconds,
-            }
+            # Fallback to database cache
+            from data.database import get_connection
+            conn = get_connection()
+            c = conn.cursor()
+            expires_at = time.time() + ttl_seconds
+            
+            c.execute('''
+                INSERT INTO kv_cache (key, value_json, expires_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json=excluded.value_json,
+                    expires_at=excluded.expires_at
+            ''', (key, val, expires_at))
+            conn.commit()
+            conn.close()
     except Exception as e:
         logger.error(f"Cache SET error for key {key}: {e}")
 

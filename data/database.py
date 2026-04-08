@@ -195,6 +195,15 @@ def initialize_database():
         )
     ''')
     
+    # Postgres/SQLite KV Store for generic JSON caching (Replacing Redis)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS kv_cache (
+            key TEXT PRIMARY KEY,
+            value_json TEXT,
+            expires_at REAL
+        )
+    ''')
+    
     conn.commit()
     conn.close()
     logger.info("Successfully initialized the core SQLite database engine and normalized schema.")
