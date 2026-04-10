@@ -72,9 +72,30 @@ class MoneyControlScraper:
         return self._fetch_mc_data("portfolio", isin) or []
 
     def get_fundamentals(self, isin: str) -> Dict[str, Any]:
-        """Basic fund metrics like AUM, expense ratio from MC."""
-        # Also fetch snapshot values
+        """Fetches valuation/style-box metrics (PE, PB, Price/Sale, Dividend Yield, ROE)."""
         snap = self._fetch_mc_data("fundamentals", isin) or {}
         logger.info(f"[MC Debug] Raw fundamentals response keys for {isin}: {list(snap.keys())}")
-        logger.info(f"[MC Debug] Raw fundamentals sample for {isin}: { {k: snap[k] for k in list(snap.keys())[:15]} }")
         return snap
+
+    def get_overview(self, isin: str) -> Dict[str, Any]:
+        """Fetches AUM, expense ratio, and portfolio turnover from the MC overview endpoint."""
+        data = self._fetch_mc_data("overview", isin) or {}
+
+        def _clean_float(val):
+            if val is None:
+                return None
+            try:
+                return float(str(val).replace(",", "").replace("%", "").strip())
+            except (ValueError, TypeError):
+                return None
+
+        return {
+            "aum_cr": _clean_float(data.get("aum")),
+            "expense_ratio": _clean_float(data.get("expenseRatio")),
+            "portfolio_turnover": _clean_float(data.get("turnoverRatio")),
+            # Bonus metrics available from overview
+            "sharpe_overview": _clean_float(data.get("sharpeRatio")),
+            "std_dev_overview": _clean_float(data.get("stadardDeviation")),
+            "beta_overview": _clean_float(data.get("beta_3_year")),
+        }
+

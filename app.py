@@ -809,12 +809,17 @@ async def get_fund_details(isin: str):
         ms = MorningstarScraper()
         mc = MoneyControlScraper()
         loop = asyncio.get_event_loop()
-        ms_fund, mc_risk, mc_perf, mc_fund = await asyncio.gather(
+        ms_fund, mc_risk, mc_perf, mc_fund, mc_overview = await asyncio.gather(
             loop.run_in_executor(None, ms.search_fund, scheme_name),
             loop.run_in_executor(None, mc.get_risk_metrics, isin),
             loop.run_in_executor(None, mc.get_performance, isin),
             loop.run_in_executor(None, mc.get_fundamentals, isin),
+            loop.run_in_executor(None, mc.get_overview, isin),
         )
+        # Merge overview data (AUM, expense, turnover) into mc_fund for _mc_extract_fundamentals
+        if mc_overview:
+            mc_fund = {**mc_overview, **(mc_fund or {})}
+
     
         # ── 4. Process Deep Dive Data ────────────────────────────────────────────────
         # Merge performance and risk return streams to combat MC API zeroing anomalies (0.00%)

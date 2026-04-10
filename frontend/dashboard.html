@@ -1905,9 +1905,14 @@
 
             // ── Reset state ──
             el('fm-name').textContent = 'Loading…';
+            // Reset header stats
             ['fm-category', 'fm-benchmark', 'fm-aum', 'fm-nav', 'fm-expense', 'fm-exit-load', 'fm-turnover',
                 'fm-sharpe', 'fm-sortino', 'fm-beta', 'fm-alpha', 'fm-stddev', 'fm-drawdown', 'fm-volatility', 'fm-bench-label',
                 'fm-1y', 'fm-3y', 'fm-5y', 'fm-10y'].forEach(id => { if (el(id)) el(id).textContent = '—'; });
+            // Reset fundamentals table cells so stale data from previous fund doesn't linger
+            ['fm-pe', 'fm-cat-pe', 'fm-pb', 'fm-cat-pb',
+                'fm-ps', 'fm-cat-ps', 'fm-pcf', 'fm-cat-pcf',
+                'fm-dy', 'fm-cat-dy', 'fm-sg', 'fm-cat-sg'].forEach(id => { if (el(id)) el(id).textContent = '—'; });
             el('fm-sectors').innerHTML = '<div class="empty-state">Loading…</div>';
             el('fm-holdings-body').innerHTML = '<tr><td colspan="3"><div class="spinner" style="margin:20px auto;"></div></td></tr>';
             el('fm-sip-empty').style.display = 'none';
