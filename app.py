@@ -775,6 +775,23 @@ async def get_fund_details(isin: str):
     scheme_code = scheme["scheme_code"]
     benchmark_symbol = scheme["benchmark"]
 
+    # Map Yahoo Finance / MC ticker symbols to human-readable index names
+    _TICKER_TO_NAME = {
+        "^NSEI":         "Nifty 50",
+        "^BSESN":        "BSE Sensex",
+        "^NSEMDCP50":    "Nifty Midcap 50",
+        "^CNX100":       "Nifty 100",
+        "^CNX200":       "Nifty 200",
+        "^CRSLDX":       "Nifty 500",
+        "^NSMIDCP":      "Nifty Midcap 150",
+        "HDFCSML250.NS": "Nifty Smallcap 250",
+        "NIFTYSMALLCAP250.NS": "Nifty Smallcap 250",
+        "CRSLDX": "Nifty 500",
+        "NSMIDCP":       "Nifty Midcap 150",
+        "^NIFTY_MID_SELECT": "Nifty Midcap Select",
+    }
+    readable_benchmark = _TICKER_TO_NAME.get(benchmark_symbol, benchmark_symbol)
+
     # ── 2. Check SQLite Cache (1-Hour Expiration) ─────────────────────────────
     # Debug toggle: keep the live path hot while we inspect fundamentals parsing.
     # cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
@@ -900,8 +917,9 @@ async def get_fund_details(isin: str):
             "aum_cr": fundms["aum_cr"],
             "expense_ratio": fundms["expense_ratio"],
             "exit_load": fundms["exit_load"],
-            "current_nav": None,
-            "nav_date": None,
+            # Seed NAV from MC overview immediately — will be overwritten by mfapi if available
+            "current_nav": mc_overview.get("latest_nav") if mc_overview else None,
+            "nav_date": mc_overview.get("nav_date") if mc_overview else None,
         }
 
         logger.info("Parsed Moneycontrol fundamentals for %s: %s", isin, fundms)
@@ -1055,7 +1073,7 @@ async def get_fund_details(isin: str):
         "isin":               isin,
         "name":               scheme_name,
         "category":           category,
-        "benchmark":          risk_data.get("benchmark_name") or benchmark_symbol,
+        "benchmark":          risk_data.get("benchmark_name") or readable_benchmark,
         "aum_cr":             mfapi_data["aum_cr"],
         "expense_ratio":      mfapi_data["expense_ratio"],
         "exit_load":          mfapi_data["exit_load"],

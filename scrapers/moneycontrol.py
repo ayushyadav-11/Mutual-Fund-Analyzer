@@ -93,6 +93,9 @@ class MoneyControlScraper:
             "aum_cr": _clean_float(data.get("aum")),
             "expense_ratio": _clean_float(data.get("expenseRatio")),
             "portfolio_turnover": _clean_float(data.get("turnoverRatio")),
+            # NAV is also available directly from overview — use as fallback
+            "latest_nav": _clean_float(data.get("latestNAV")),
+            "nav_date": data.get("navDate"),
             # Bonus metrics available from overview
             "sharpe_overview": _clean_float(data.get("sharpeRatio")),
             "std_dev_overview": _clean_float(data.get("stadardDeviation")),
