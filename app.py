@@ -997,9 +997,35 @@ async def get_fund_details(isin: str):
             if nav_data:
                 mfapi_data["current_nav"] = float(nav_data[0]["nav"])
                 mfapi_data["nav_date"] = nav_data[0]["date"]
+                # Convert mfapi date format (DD-MM-YYYY) → YYYY-MM-DD and store + expose for chart
+                from datetime import datetime as _dt
+                from data.database import batch_insert_navs as _batch_insert_navs
+                converted = []
+                for pt in nav_data:
+                    try:
+                        d_str = pt["date"]
+                        # Handle both DD-MM-YYYY and DD-MMM-YYYY formats
+                        try:
+                            d_parsed = _dt.strptime(d_str, "%d-%m-%Y")
+                        except ValueError:
+                            d_parsed = _dt.strptime(d_str, "%d-%b-%Y")
+                        converted.append({"date": d_parsed.strftime("%Y-%m-%d"), "nav": float(pt["nav"])})
+                    except Exception:
+                        continue
+                if converted:
+                    # Persist to DB for future calls
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, _batch_insert_navs, isin, sorted(converted, key=lambda x: x["date"])
+                        )
+                    except Exception as _bi_err:
+                        logger.warning("batch_insert_navs failed for %s: %s", isin, _bi_err)
+                    # Override navs so chart uses fresh data even on first view
+                    navs = sorted(converted, key=lambda x: x["date"])
     except Exception as _nav_err:
         import logging as _log
         _log.getLogger("app").warning("NAV fetch failed for %s: %s", isin, _nav_err)
+
 
     # ── 4. Chart: SIP wealth (if txns) else ₹10k NAV growth vs benchmark ─────
     sip_chart: dict = {}
