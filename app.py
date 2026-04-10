@@ -1001,75 +1001,91 @@ async def get_fund_details(isin: str):
         import logging as _log
         _log.getLogger("app").warning("NAV fetch failed for %s: %s", isin, _nav_err)
 
-    # ── 4. Derived XIRR charting is preserved for SIP analysis only ───────────
+    # ── 4. Chart: SIP wealth (if txns) else ₹10k NAV growth vs benchmark ─────
     sip_chart: dict = {}
     try:
         holding = next((h for h in session_data.get("holdings", []) if h.get("isin") == isin), None) if session_data else None
         benchmark_label = risk_data.get("benchmark_name") or fallback_benchmark
-        if holding and navs and benchmark_symbol:
-            import pandas as pd
-            from datetime import date, timedelta
-            from core.risk import _fetch_benchmark_returns
+        import pandas as pd
+        from datetime import date, timedelta
+        from core.risk import _fetch_benchmark_returns
 
+        bench_start = (date.today() - timedelta(days=5 * 365)).strftime("%Y-%m-%d")
+        bench_end   = date.today().strftime("%Y-%m-%d")
+        cache_key   = f"{benchmark_symbol}_{bench_start}_{bench_end}"
+
+        if cache_key in _benchmark_cache:
+            bench_s = _benchmark_cache[cache_key]
+        else:
+            bench_s = await asyncio.get_event_loop().run_in_executor(
+                None, _fetch_benchmark_returns, benchmark_symbol, bench_start, bench_end
+            )
+            if bench_s is not None:
+                _benchmark_cache[cache_key] = bench_s
+
+        if navs and bench_s is not None:
             nav_df = pd.DataFrame(navs)
             nav_df["date"] = pd.to_datetime(nav_df["date"])
             nav_df = nav_df.set_index("date").sort_index()
+            monthly_nav = nav_df["nav"].resample("ME").last().dropna()
+            bench_monthly_nav = (1 + bench_s).cumprod()
 
-            sip_txns = [t for t in holding["transactions"]
-                        if t["type"] in ("SIP", "BUY") and t.get("nav") and t.get("amount")]
-            sip_txns.sort(key=lambda x: x["date"])
+            sip_txns = []
+            if holding:
+                sip_txns = [t for t in holding.get("transactions", [])
+                            if t["type"] in ("SIP", "BUY", "SWITCH_IN") and t.get("nav") and t.get("amount")]
+                sip_txns.sort(key=lambda x: x["date"])
+
+            labels, fund_vals, bench_vals = [], [], []
 
             if sip_txns:
-                bench_start = (date.today() - timedelta(days=10 * 365)).strftime("%Y-%m-%d")
-                bench_end = date.today().strftime("%Y-%m-%d")
-                cache_key = f"{benchmark_symbol}_{bench_start}_{bench_end}"
-                
-                if cache_key in _benchmark_cache:
-                    bench_s = _benchmark_cache[cache_key]
-                else:
-                    bench_s = await asyncio.get_event_loop().run_in_executor(
-                        None, _fetch_benchmark_returns, benchmark_symbol,
-                        bench_start, bench_end
-                    )
-                    if bench_s is not None:
-                        _benchmark_cache[cache_key] = bench_s
+                # ── Path A: actual SIP wealth chart ───────────────────────────
+                fund_units = 0.0
+                bench_units = 0.0
+                for txn in sip_txns:
+                    d = pd.Timestamp(txn["date"])
+                    amount = abs(txn["amount"])
+                    fund_units += amount / txn["nav"]
+                    ym = d.to_period("M")
+                    matches = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
+                    if not matches.empty:
+                        bench_units += amount / (100.0 * float(matches.iloc[-1]))
+                for ts, nav_val in monthly_nav[-60:].items():
+                    labels.append(ts.strftime("%b %Y"))
+                    fund_vals.append(round(fund_units * float(nav_val), 2))
+                    ym = ts.to_period("M")
+                    bm = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
+                    bench_vals.append(round(bench_units * 100.0 * float(bm.iloc[-1]) if not bm.empty else 0, 2))
+                chart_type = "sip"
+            else:
+                # ── Path B: ₹10,000 lumpsum NAV growth vs benchmark ───────────
+                start_nav = None
+                start_bench = None
+                for ts, nav_val in monthly_nav[-60:].items():
+                    ym = ts.to_period("M")
+                    bm = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
+                    if start_nav is None:
+                        start_nav  = float(nav_val)
+                        start_bench = float(bm.iloc[-1]) if not bm.empty else None
+                        if start_bench is None:
+                            continue
+                    labels.append(ts.strftime("%b %Y"))
+                    fund_vals.append(round(10000 * float(nav_val) / start_nav, 2))
+                    bval = (float(bm.iloc[-1]) / start_bench * 10000) if (not bm.empty and start_bench) else 0
+                    bench_vals.append(round(bval, 2))
+                chart_type = "growth"
 
-                if bench_s is not None:
-                    # Build monthly SIP wealth index
-                    labels, fund_vals, bench_vals = [], [], []
-                    fund_units = 0.0
-                    bench_units = 0.0
-                    bench_monthly_nav = (1 + bench_s).cumprod()
-
-                    for txn in sip_txns:
-                        d = pd.Timestamp(txn["date"])
-                        nav_val = txn["nav"]
-                        amount  = abs(txn["amount"])
-                        fund_units += amount / nav_val
-                        # Simulate equal SIP in benchmark
-                        ym = d.to_period("M")
-                        matches = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
-                        if not matches.empty:
-                            bench_units += amount / (100.0 * float(matches.iloc[-1]))
-
-                    # Evaluate current value for each month
-                    monthly_nav = nav_df["nav"].resample("ME").last().dropna()
-                    for ts, nav_val in monthly_nav[-60:].items():
-                        label = ts.strftime("%b %Y")
-                        labels.append(label)
-                        fund_vals.append(round(fund_units * float(nav_val), 2))
-                        ym = ts.to_period("M")
-                        bm = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
-                        bench_vals.append(round(bench_units * 100.0 * float(bm.iloc[-1]) if not bm.empty else 0, 2))
-
-                    sip_chart = {
-                        "labels": labels,
-                        "fund_value": fund_vals,
-                        "benchmark_value": bench_vals,
-                        "benchmark_name": benchmark_label
-                    }
+            if labels:
+                sip_chart = {
+                    "labels":          labels,
+                    "fund_value":      fund_vals,
+                    "benchmark_value": bench_vals,
+                    "benchmark_name":  benchmark_label,
+                    "chart_type":      chart_type,   # "sip" | "growth"
+                }
     except Exception:
         pass  # sip_chart stays empty — non-critical
+
 
     return {
         "isin":               isin,

@@ -1003,13 +1003,13 @@
                 <div class="empty-state">Loading sector data...</div>
             </div>
 
-            <!-- ⑤ SIP vs Benchmark Chart -->
-            <h3 class="fm-section-title">📈 SIP Performance vs Benchmark</h3>
+            <!-- ⑤ Fund Growth vs Benchmark Chart -->
+            <h3 class="fm-section-title" id="fm-sip-title">📈 Fund Performance vs Benchmark</h3>
             <div
                 style="position:relative;height:220px;margin-bottom:22px;background:var(--bg-secondary);border-radius:12px;padding:12px;">
                 <canvas id="fm-sip-chart"></canvas>
-                <div class="empty-state" id="fm-sip-empty" style="display:none;">SIP comparison unavailable — no SIP/BUY
-                    transactions found.</div>
+                <div class="empty-state" id="fm-sip-empty" style="display:none;">Chart unavailable — benchmark data
+                    could not be loaded.</div>
             </div>
 
             <!-- ⑥ Portfolio Disclosure — Top 20 Holdings -->
@@ -2129,13 +2129,19 @@
                 const sip = d.sip_vs_benchmark || {};
                 const sipCanvas = el('fm-sip-chart');
                 if (sip.labels && sip.labels.length) {
+                    const chartType = sip.chart_type || 'growth';
+                    const isSip = chartType === 'sip';
+                    const titleEl = document.getElementById('fm-sip-title');
+                    if (titleEl) titleEl.textContent = isSip
+                        ? '📈 Your SIP Wealth vs Benchmark'
+                        : '📈 ₹10,000 Growth vs Benchmark (5Y)';
                     _sipChart = new Chart(sipCanvas, {
                         type: 'line',
                         data: {
                             labels: sip.labels,
                             datasets: [
                                 {
-                                    label: 'SIP in Fund',
+                                    label: isSip ? 'SIP in Fund' : 'Fund NAV Growth',
                                     data: sip.fund_value,
                                     borderColor: '#6366f1',
                                     backgroundColor: 'rgba(99,102,241,0.1)',
@@ -2164,6 +2170,7 @@
                     sipCanvas.style.display = 'none';
                     el('fm-sip-empty').style.display = 'block';
                 }
+
 
                 // ── ⑥ Holdings ──
                 const hBody = el('fm-holdings-body');
