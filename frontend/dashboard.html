@@ -921,7 +921,83 @@
                 </table>
             </div>
 
-            <!-- ④ Sector Allocation -->
+            <!-- ④ Full Performance Section -->
+            <h3 class="fm-section-title">📊 Performance</h3>
+            <div style="margin-bottom:22px;">
+                <!-- Tab buttons -->
+                <div id="fm-perf-tabs" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+                    <button class="fm-perf-tab active" data-tab="lumpsum" onclick="switchPerfTab('lumpsum',this)"
+                        style="padding:6px 16px;border-radius:20px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.78rem;cursor:pointer;">Lumpsum</button>
+                    <button class="fm-perf-tab" data-tab="yearly" onclick="switchPerfTab('yearly',this)"
+                        style="padding:6px 16px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-size:0.78rem;cursor:pointer;">Yearly
+                        Returns</button>
+                    <button class="fm-perf-tab" data-tab="sip" onclick="switchPerfTab('sip',this)"
+                        style="padding:6px 16px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-size:0.78rem;cursor:pointer;">SIP
+                        Returns</button>
+                </div>
+
+                <!-- Lumpsum annualised tab -->
+                <div id="fm-perf-lumpsum" class="fm-perf-panel" style="overflow-x:auto;">
+                    <table class="data-table" id="fm-perf-lumpsum-table" style="font-size:0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th class="num">Absolute(%)</th>
+                                <th class="num">Annualised(%)</th>
+                                <th class="num">Category Avg(%)</th>
+                                <th class="num">Rank</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fm-perf-lumpsum-body">
+                            <tr>
+                                <td colspan="5" class="empty-state">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Yearly returns tab -->
+                <div id="fm-perf-yearly" class="fm-perf-panel" style="display:none;overflow-x:auto;">
+                    <table class="data-table" style="font-size:0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th class="num">Return(%)</th>
+                                <th class="num">Category Avg(%)</th>
+                                <th class="num">Rank</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fm-perf-yearly-body">
+                            <tr>
+                                <td colspan="4" class="empty-state">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- SIP returns tab -->
+                <div id="fm-perf-sip" class="fm-perf-panel" style="display:none;overflow-x:auto;">
+                    <table class="data-table" style="font-size:0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th class="num">Invested (₹)</th>
+                                <th class="num">Current Value (₹)</th>
+                                <th class="num">Absolute(%)</th>
+                                <th class="num">XIRR(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fm-perf-sip-body">
+                            <tr>
+                                <td colspan="5" class="empty-state">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ⑤ Sector Allocation -->
+
             <h3 class="fm-section-title">🏭 Sector Allocation</h3>
             <div id="fm-sectors" style="margin-bottom:22px;">
                 <div class="empty-state">Loading sector data...</div>
@@ -1982,7 +2058,58 @@
                 if (el('fmb-5y')) el('fmb-5y').textContent = fmtRet(bRet['5Y']);
                 if (el('fmb-10y')) el('fmb-10y').textContent = fmtRet(bRet['10Y']);
 
-                // ── ④ Sector Allocation ──
+                // ── ④ Performance Tables ──
+                const fmtPerf = v => {
+                    if (v == null || v === '' || v === '--') return '<span style="color:var(--text-secondary)">—</span>';
+                    const n = parseFloat(v);
+                    const cls = n >= 0 ? 'var(--success)' : 'var(--danger)';
+                    return `<span style="color:${cls};font-weight:700;">${n >= 0 ? '+' : ''}${n.toFixed(2)}%</span>`;
+                };
+                const rankBadge = (rank, total) => {
+                    if (!rank || !total) return '—';
+                    const pct = rank / total;
+                    const cls = pct <= 0.25 ? 'var(--success)' : pct <= 0.5 ? 'var(--info)' : pct <= 0.75 ? 'var(--warning)' : 'var(--danger)';
+                    return `<span style="color:${cls};font-weight:600;">${rank}/${total}</span>`;
+                };
+
+                // Lumpsum tab
+                const lumpsumRows = (d.performance_annualised || []).filter(r => r.periodInvested).map(r => `
+                    <tr>
+                        <td style="font-weight:600;">${r.periodInvested}</td>
+                        <td class="num">${fmtPerf(r.returns)}</td>
+                        <td class="num">${fmtPerf(r.returns)}</td>
+                        <td class="num">${fmtPerf(r.catAvg)}</td>
+                        <td class="num">${rankBadge(r.rankInCat, r.schemeCount)}</td>
+                    </tr>`).join('');
+                document.getElementById('fm-perf-lumpsum-body').innerHTML =
+                    lumpsumRows || '<tr><td colspan="5" class="empty-state">No data available</td></tr>';
+
+                // Yearly tab — uses performance_yearly array (calendar year returns)
+                const yearlyRows = (d.performance_yearly || []).map(r => `
+                    <tr>
+                        <td style="font-weight:600;">${r.years}</td>
+                        <td class="num">${fmtPerf(r.schemeReturn)}</td>
+                        <td class="num">${r.catAvg != null ? fmtPerf(r.catAvg) : '—'}</td>
+                        <td class="num">${rankBadge(r.rank, r.schemeCount)}</td>
+                    </tr>`).join('');
+                document.getElementById('fm-perf-yearly-body').innerHTML =
+                    yearlyRows || '<tr><td colspan="4" class="empty-state">No data available</td></tr>';
+
+                // SIP tab
+                const fmt2 = n => n != null ? `₹${parseFloat(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—';
+                const sipRows = (d.performance_sip || []).map(r => `
+                    <tr>
+                        <td style="font-weight:600;">${r.years ? r.years + ' Year' + (r.years > 1 ? 's' : '') : ''}</td>
+                        <td class="num">${fmt2(r.investedValue)}</td>
+                        <td class="num">${fmt2(r.latestValue)}</td>
+                        <td class="num">${fmtPerf(r.absoluteReturn)}</td>
+                        <td class="num">${fmtPerf(r.annualisedValue)}</td>
+                    </tr>`).join('');
+                document.getElementById('fm-perf-sip-body').innerHTML =
+                    sipRows || '<tr><td colspan="5" class="empty-state">No data available</td></tr>';
+
+                // ── ⑤ Sector Allocation ──
+
                 const sectors = el('fm-sectors');
                 if (d.sector_allocation && d.sector_allocation.length) {
                     const maxW = Math.max(...d.sector_allocation.map(s => s.weight));
@@ -2061,9 +2188,22 @@
         }
 
 
+        function switchPerfTab(tab, btn) {
+            document.querySelectorAll('.fm-perf-panel').forEach(p => p.style.display = 'none');
+            document.querySelectorAll('.fm-perf-tab').forEach(b => {
+                b.style.background = 'transparent';
+                b.style.color = 'var(--text-secondary)';
+                b.style.borderColor = 'var(--border)';
+            });
+            const panel = document.getElementById(`fm-perf-${tab}`);
+            if (panel) panel.style.display = 'block';
+            if (btn) { btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--accent)'; }
+        }
+
         function closeFundModal() {
             el('fund-modal').style.display = 'none';
         }
+
 
         // Close on clicking outside
         el('fund-modal').addEventListener('click', e => {

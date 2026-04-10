@@ -60,8 +60,24 @@ class MoneyControlScraper:
 
     def get_performance(self, isin: str) -> Dict[str, Any]:
         """Fetches annualised returns (1Y, 3Y, 5Y, 10Y) alongside benchmark figures."""
-        # Note: 'performance?section=annualised' requires special formatting in our generic fetcher
         return self._fetch_mc_data("performance?section=annualised", isin) or {}
+
+    def get_performance_yearly(self, isin: str) -> list:
+        """Fetches calendar-year returns with category average and rank-in-category."""
+        raw = self._fetch_mc_data("performance?section=yearly", isin)
+        try:
+            return (raw or [{}])[0].get("lumpsum", {}).get("yearly", [])
+        except Exception:
+            return []
+
+    def get_performance_sip(self, isin: str) -> list:
+        """Fetches SIP return table (1Y/3Y/5Y/10Y invested & current value)."""
+        raw = self._fetch_mc_data("performance?section=sip", isin)
+        try:
+            return (raw or [{}])[0].get("sip", [])
+        except Exception:
+            return []
+
 
     def get_peers(self, isin: str) -> list:
         """Returns a list of direct competitors and their metrics."""

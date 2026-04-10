@@ -826,10 +826,12 @@ async def get_fund_details(isin: str):
         ms = MorningstarScraper()
         mc = MoneyControlScraper()
         loop = asyncio.get_event_loop()
-        ms_fund, mc_risk, mc_perf, mc_fund, mc_overview = await asyncio.gather(
+        ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
             loop.run_in_executor(None, ms.search_fund, scheme_name),
             loop.run_in_executor(None, mc.get_risk_metrics, isin),
             loop.run_in_executor(None, mc.get_performance, isin),
+            loop.run_in_executor(None, mc.get_performance_yearly, isin),
+            loop.run_in_executor(None, mc.get_performance_sip, isin),
             loop.run_in_executor(None, mc.get_fundamentals, isin),
             loop.run_in_executor(None, mc.get_overview, isin),
         )
@@ -1085,6 +1087,14 @@ async def get_fund_details(isin: str):
         "returns":            returns_data,
         "fund_trailing":      returns_data,
         "benchmark_cagr":     benchmark_returns,
+        "performance_annualised": (
+            # Extract lumpsum.annualised from mc_perf (which is a list like [{lumpsum:{annualised:[...],...}},...])
+            (mc_perf[0].get("lumpsum", {}).get("annualised", []) if isinstance(mc_perf, list) and mc_perf else [])
+            if not cached_fund else []
+        ),
+        "performance_yearly":     mc_perf_yearly if not cached_fund else [],
+        "performance_sip":        mc_perf_sip if not cached_fund else [],
+
         "sector_allocation":  sector_allocation,
         "holdings":           sorted_holdings,
         "sip_vs_benchmark":   sip_chart,
