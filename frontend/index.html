@@ -43,16 +43,16 @@
         <div id="auth-section" class="auth-container">
           <h2>Welcome to MF Analyzer</h2>
           <div class="auth-tabs">
-            <div class="auth-tab active" id="tab-login">Login</div>
-            <div class="auth-tab" id="tab-signup">Sign Up</div>
+            <div class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Login</div>
+            <div class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Sign Up</div>
           </div>
           
-          <form id="auth-form" class="auth-form">
+          <form id="auth-form" class="auth-form" onsubmit="handleAuthSubmit(event)">
             <input type="text" id="auth-username" placeholder="Username" style="display:none;" />
             <input type="email" id="auth-email" placeholder="Email Address" required />
             <input type="password" id="auth-password" placeholder="Password" required />
             <button type="submit" id="auth-submit">Login</button>
-            <a href="#" id="forgot-password-link" style="text-align:center; font-size: 0.9em; color: var(--accent); margin-top: 10px;">Forgot Password?</a>
+            <a href="#" id="forgot-password-link" style="text-align:center; font-size: 0.9em; color: var(--accent); margin-top: 10px;" onclick="handleForgotPassword(event)">Forgot Password?</a>
           </form>
         </div>
 
@@ -139,13 +139,8 @@
     }
 
     /* Auth Logic */
-    let authMode = 'login';
     const authSection = document.getElementById('auth-section');
     const uploadSection = document.getElementById('upload-section');
-    const tabLogin = document.getElementById('tab-login');
-    const tabSignup = document.getElementById('tab-signup');
-    const authForm = document.getElementById('auth-form');
-    const authSubmitBtn = document.getElementById('auth-submit');
     const navUserInfo = document.getElementById('nav-user-info');
     const navLogout = document.getElementById('nav-logout');
 
@@ -167,40 +162,61 @@
     }
 
     let supabase = null;
-    (async function initSupabase() {
-        try {
-            const res = await fetch(getApiUrl() + '/api/config');
-            const config = await res.json();
-            if(config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
-                supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
-            }
-        } catch (e) {
-            console.error("Failed to initialize Supabase:", e);
+    let authMode = 'login';
+
+    function switchAuthTab(mode) {
+        authMode = mode;
+        const tabLogin = document.getElementById('tab-login');
+        const tabSignup = document.getElementById('tab-signup');
+        const authSubmitBtn = document.getElementById('auth-submit');
+        const usernameField = document.getElementById('auth-username');
+        const forgotLink = document.getElementById('forgot-password-link');
+
+        if (mode === 'login') {
+            tabLogin.classList.add('active');
+            tabSignup.classList.remove('active');
+            authSubmitBtn.textContent = 'Login';
+            usernameField.style.display = 'none';
+            usernameField.required = false;
+            forgotLink.style.display = 'block';
+        } else {
+            tabSignup.classList.add('active');
+            tabLogin.classList.remove('active');
+            authSubmitBtn.textContent = 'Sign Up';
+            usernameField.style.display = 'block';
+            usernameField.required = true;
+            forgotLink.style.display = 'none';
         }
-    })();
+    }
 
-    tabLogin.onclick = () => { 
-        tabLogin.classList.add('active'); tabSignup.classList.remove('active'); 
-        authMode = 'login'; authSubmitBtn.textContent = 'Login'; 
-        document.getElementById('auth-username').style.display='none'; 
-        document.getElementById('auth-username').required=false; 
-        document.getElementById('forgot-password-link').style.display='block'; 
-    };
-    tabSignup.onclick = () => { 
-        tabSignup.classList.add('active'); tabLogin.classList.remove('active'); 
-        authMode = 'signup'; authSubmitBtn.textContent = 'Sign Up'; 
-        document.getElementById('auth-username').style.display='block'; 
-        document.getElementById('auth-username').required=true; 
-        document.getElementById('forgot-password-link').style.display='none'; 
-    };
-
-    authForm.onsubmit = async (e) => {
+    async function handleForgotPassword(e) {
         e.preventDefault();
+        const email = document.getElementById('auth-email').value;
+        if (!email) return showToast('❌ Please enter your email address above first.');
         if (!supabase) return showToast('❌ Auth configuration not loaded yet.');
+        const authSubmitBtn = document.getElementById('auth-submit');
+        authSubmitBtn.textContent = 'Sending...';
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '/reset-password.html'
+            });
+            if (error) throw error;
+            showToast('✅ Password reset link sent to your email!');
+        } catch (err) {
+            showToast('❌ ' + err.message);
+        } finally {
+            authSubmitBtn.textContent = 'Login';
+        }
+    }
+
+    async function handleAuthSubmit(e) {
+        e.preventDefault();
+        if (!supabase) return showToast('❌ Auth config not loaded. Try refreshing the page.');
 
         const email = document.getElementById('auth-email').value;
         const password = document.getElementById('auth-password').value;
         const username = document.getElementById('auth-username').value;
+        const authSubmitBtn = document.getElementById('auth-submit');
         authSubmitBtn.textContent = 'Processing...';
         authSubmitBtn.disabled = true;
         
@@ -220,7 +236,7 @@
                 });
                 if (error) throw error;
                 showToast('✅ Account created! Please check your email to verify.');
-                tabLogin.click();
+                switchAuthTab('login');
             }
         } catch (err) {
             showToast('❌ ' + err.message);
@@ -228,27 +244,21 @@
             authSubmitBtn.textContent = authMode === 'login' ? 'Login' : 'Sign Up';
             authSubmitBtn.disabled = false;
         }
-    };
+    }
 
-    document.getElementById('forgot-password-link').onclick = async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('auth-email').value;
-        if (!email) return showToast('❌ Please enter your email address above first.');
-        if (!supabase) return showToast('❌ Auth configuration not loaded yet.');
-        
-        authSubmitBtn.textContent = 'Sending...';
+    (async function initSupabase() {
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: window.location.origin + '/reset-password.html'
-            });
-            if (error) throw error;
-            showToast('✅ Password reset link sent to your email!');
-        } catch (err) {
-            showToast('❌ ' + err.message);
-        } finally {
-            authSubmitBtn.textContent = authMode === 'login' ? 'Login' : 'Sign Up';
+            const res = await fetch(getApiUrl() + '/api/config');
+            const config = await res.json();
+            if(config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
+                supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+            } else {
+                showToast('⚠️ Auth service not configured.');
+            }
+        } catch (e) {
+            console.error("Failed to initialize Supabase:", e);
         }
-    };
+    })();
 
     navLogout.onclick = async (e) => {
         e.preventDefault();
