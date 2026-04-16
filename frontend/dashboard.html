@@ -1040,7 +1040,7 @@
 
     <script>
         // ── Globals ──────────────────────────────────────────────────────────────────
-        const API = 'https://mutual-fund-analyzer-z48c.onrender.com';
+        const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? window.location.origin : 'https://mutual-fund-analyzer-z48c.onrender.com';
         let allTransactions = [];
         let allHoldings = [];
         let allocChart = null;

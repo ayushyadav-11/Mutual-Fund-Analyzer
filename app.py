@@ -69,11 +69,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-key")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "super-secret-key")
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.method == "OPTIONS" or request.url.path in ["/", "/api/login", "/api/signup", "/favicon.ico", "/dashboard.html", "/family.html"]:
+        # Unauthenticated endpoints
+        if request.method == "OPTIONS" or request.url.path in ["/", "/favicon.ico", "/dashboard.html", "/family.html", "/reset-password.html", "/api/config"]:
             return await call_next(request)
         if request.url.path.startswith("/api/"):
             auth_header = request.headers.get("Authorization")
@@ -82,42 +83,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = auth_header.split(" ")[1]
             try:
                 import jwt
-                payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                # Supabase tokens use HS256 and contain 'aud': 'authenticated'
+                payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
                 request.state.user_id = payload.get("sub")
-            except Exception:
+            except Exception as e:
                 return JSONResponse(status_code=401, content={"detail": "Invalid token"}, headers={"Access-Control-Allow-Origin": "*"})
         return await call_next(request)
 
 app.add_middleware(AuthMiddleware)
 
-class SignupRequest(BaseModel):
-    username: str
-    password: str
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-@app.post("/api/signup")
-async def signup(req: SignupRequest):
-    import bcrypt
-    from data.database import create_user
-    pwd_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
-    try:
-        create_user(req.username, pwd_hash)
-        return {"message": "User created successfully"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/login")
-async def login(req: LoginRequest):
-    import bcrypt, jwt
-    from data.database import get_user_by_username
-    user = get_user_by_username(req.username)
-    if not user or not bcrypt.checkpw(req.password.encode(), user["password_hash"].encode()):
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
-    token = jwt.encode({"sub": user["id"]}, JWT_SECRET, algorithm="HS256")
-    return {"token": token, "message": "Authenticated successfully", "username": user["username"]}
+@app.get("/api/config")
+def get_config():
+    return {
+        "SUPABASE_URL": os.getenv("SUPABASE_URL"),
+        "SUPABASE_ANON_KEY": os.getenv("SUPABASE_ANON_KEY")
+    }
 
 
 # Session file location (persists between requests)

@@ -80,7 +80,7 @@
 
   <script>
     const API = 'https://mutual-fund-analyzer-z48c.onrender.com';
-    const getApiUrl = () => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8000' : API;
+    const getApiUrl = () => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? window.location.origin : API;
     
     function showToast(msg) {
       const toast = document.getElementById('toast');
