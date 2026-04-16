@@ -54,7 +54,7 @@
             <input type="text" id="auth-username" placeholder="Username" style="display:none;" />
             <input type="email" id="auth-email" placeholder="Email Address" required />
             <input type="password" id="auth-password" placeholder="Password" required />
-            <button type="submit" id="auth-submit" disabled style="opacity:0.6;">Loading auth…</button>
+            <button type="submit" id="auth-submit">Login</button>
             <a href="#" id="forgot-password-link" style="text-align:center; font-size: 0.9em; color: var(--accent); margin-top: 10px;" onclick="handleForgotPassword(event)">Forgot Password?</a>
           </form>
         </div>
@@ -250,45 +250,28 @@
     }
 
     (async function initSupabase() {
-        const submitBtn = document.getElementById('auth-submit');
         const errorBanner = document.getElementById('auth-config-error');
-        const MAX_RETRIES = 5;
-        const TIMEOUT_MS = 15000;
+        const TIMEOUT_MS = 10000;
 
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            try {
-                submitBtn.textContent = attempt === 1 ? 'Connecting…' : `Retrying (${attempt}/${MAX_RETRIES})…`;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+            const res = await fetch(getApiUrl() + '/api/config', { signal: controller.signal });
+            clearTimeout(timeoutId);
 
-                const res = await fetch(getApiUrl() + '/api/config', { signal: controller.signal });
-                clearTimeout(timeoutId);
+            if (!res.ok) throw new Error('Config returned ' + res.status);
+            const config = await res.json();
 
-                if (!res.ok) throw new Error('Config returned ' + res.status);
-                const config = await res.json();
-
-                if (config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
-                    supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
-                    submitBtn.disabled = false;
-                    submitBtn.style.opacity = '1';
-                    submitBtn.textContent = authMode === 'login' ? 'Login' : 'Sign Up';
-                    errorBanner.style.display = 'none';
-                    return; // success — stop retrying
-                } else {
-                    throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
-                }
-            } catch (e) {
-                console.warn(`Supabase init attempt ${attempt} failed:`, e.message);
-                if (attempt === MAX_RETRIES) {
-                    errorBanner.style.display = 'block';
-                    submitBtn.textContent = 'Backend Unavailable';
-                    submitBtn.disabled = true;
-                } else {
-                    // brief pause before retry
-                    await new Promise(r => setTimeout(r, 3000));
-                }
+            if (config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
+                supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+                errorBanner.style.display = 'none';
+            } else {
+                throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
             }
+        } catch (e) {
+            console.warn('Supabase init failed (auth will fail on submit):', e.message);
+            // Don't block the UI — user can still attempt login, error shown on submit
         }
     })();
 
