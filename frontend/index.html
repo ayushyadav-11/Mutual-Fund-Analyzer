@@ -252,26 +252,46 @@
     (async function initSupabase() {
         const submitBtn = document.getElementById('auth-submit');
         const errorBanner = document.getElementById('auth-config-error');
-        try {
-            const res = await fetch(getApiUrl() + '/api/config');
-            if (!res.ok) throw new Error('Config endpoint returned ' + res.status);
-            const config = await res.json();
-            if (config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
-                supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
-                submitBtn.disabled = false;
-                submitBtn.style.opacity = '1';
-                submitBtn.textContent = 'Login';
-                errorBanner.style.display = 'none';
-            } else {
-                throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
+        const MAX_RETRIES = 5;
+        const TIMEOUT_MS = 15000;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                submitBtn.textContent = attempt === 1 ? 'Connecting…' : `Retrying (${attempt}/${MAX_RETRIES})…`;
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+                const res = await fetch(getApiUrl() + '/api/config', { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!res.ok) throw new Error('Config returned ' + res.status);
+                const config = await res.json();
+
+                if (config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
+                    supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                    submitBtn.textContent = authMode === 'login' ? 'Login' : 'Sign Up';
+                    errorBanner.style.display = 'none';
+                    return; // success — stop retrying
+                } else {
+                    throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
+                }
+            } catch (e) {
+                console.warn(`Supabase init attempt ${attempt} failed:`, e.message);
+                if (attempt === MAX_RETRIES) {
+                    errorBanner.style.display = 'block';
+                    submitBtn.textContent = 'Backend Unavailable';
+                    submitBtn.disabled = true;
+                } else {
+                    // brief pause before retry
+                    await new Promise(r => setTimeout(r, 3000));
+                }
             }
-        } catch (e) {
-            console.error("Failed to initialize Supabase:", e);
-            errorBanner.style.display = 'block';
-            submitBtn.textContent = 'Auth Unavailable';
-            submitBtn.disabled = true;
         }
     })();
+
 
     navLogout.onclick = async (e) => {
         e.preventDefault();
