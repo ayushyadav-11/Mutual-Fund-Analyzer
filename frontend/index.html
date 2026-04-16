@@ -166,40 +166,93 @@
         }
     }
 
-    tabLogin.onclick = () => { tabLogin.classList.add('active'); tabSignup.classList.remove('active'); authMode = 'login'; authSubmitBtn.textContent = 'Login'; };
-    tabSignup.onclick = () => { tabSignup.classList.add('active'); tabLogin.classList.remove('active'); authMode = 'signup'; authSubmitBtn.textContent = 'Sign Up'; };
+    let supabase = null;
+    (async function initSupabase() {
+        try {
+            const res = await fetch(getApiUrl() + '/api/config');
+            const config = await res.json();
+            if(config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
+                supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+            }
+        } catch (e) {
+            console.error("Failed to initialize Supabase:", e);
+        }
+    })();
+
+    tabLogin.onclick = () => { 
+        tabLogin.classList.add('active'); tabSignup.classList.remove('active'); 
+        authMode = 'login'; authSubmitBtn.textContent = 'Login'; 
+        document.getElementById('auth-username').style.display='none'; 
+        document.getElementById('auth-username').required=false; 
+        document.getElementById('forgot-password-link').style.display='block'; 
+    };
+    tabSignup.onclick = () => { 
+        tabSignup.classList.add('active'); tabLogin.classList.remove('active'); 
+        authMode = 'signup'; authSubmitBtn.textContent = 'Sign Up'; 
+        document.getElementById('auth-username').style.display='block'; 
+        document.getElementById('auth-username').required=true; 
+        document.getElementById('forgot-password-link').style.display='none'; 
+    };
 
     authForm.onsubmit = async (e) => {
         e.preventDefault();
-        const username = document.getElementById('auth-username').value;
+        if (!supabase) return showToast('❌ Auth configuration not loaded yet.');
+
+        const email = document.getElementById('auth-email').value;
         const password = document.getElementById('auth-password').value;
-        const url = getApiUrl() + (authMode === 'login' ? '/api/login' : '/api/signup');
+        const username = document.getElementById('auth-username').value;
+        authSubmitBtn.textContent = 'Processing...';
+        authSubmitBtn.disabled = true;
         
         try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || data.message || 'Error occurred');
-            
             if (authMode === 'login') {
-                localStorage.setItem('mf_token', data.token);
-                localStorage.setItem('mf_username', data.username);
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+                localStorage.setItem('mf_token', data.session.access_token);
+                localStorage.setItem('mf_username', data.user.user_metadata?.username || email.split("@")[0]);
                 checkAuth();
                 showToast('🔑 Logged in successfully!');
             } else {
-                showToast('✅ Account created! Please log in.');
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: { data: { username } }
+                });
+                if (error) throw error;
+                showToast('✅ Account created! Please check your email to verify.');
                 tabLogin.click();
             }
         } catch (err) {
             showToast('❌ ' + err.message);
+        } finally {
+            authSubmitBtn.textContent = authMode === 'login' ? 'Login' : 'Sign Up';
+            authSubmitBtn.disabled = false;
         }
     };
 
-    navLogout.onclick = (e) => {
+    document.getElementById('forgot-password-link').onclick = async (e) => {
         e.preventDefault();
+        const email = document.getElementById('auth-email').value;
+        if (!email) return showToast('❌ Please enter your email address above first.');
+        if (!supabase) return showToast('❌ Auth configuration not loaded yet.');
+        
+        authSubmitBtn.textContent = 'Sending...';
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '/reset-password.html'
+            });
+            if (error) throw error;
+            showToast('✅ Password reset link sent to your email!');
+        } catch (err) {
+            showToast('❌ ' + err.message);
+        } finally {
+            authSubmitBtn.textContent = authMode === 'login' ? 'Login' : 'Sign Up';
+        }
+    };
+
+    navLogout.onclick = async (e) => {
+        e.preventDefault();
+        if (supabase) await supabase.auth.signOut();
         localStorage.removeItem('mf_token');
         localStorage.removeItem('mf_username');
         window.location.reload();
