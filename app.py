@@ -69,25 +69,86 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "super-secret-key")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+
+# ── JWKS cache for ECC (P-256) / ES256 token verification ────────────────────
+_jwks_cache: dict = {}
+
+async def _get_jwks() -> dict:
+    """Fetch and cache Supabase JWKS public keys (used for ES256 / ECC P-256 tokens)."""
+    global _jwks_cache
+    if _jwks_cache:
+        return _jwks_cache
+    if not SUPABASE_URL:
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+            resp.raise_for_status()
+            _jwks_cache = resp.json()
+            logger.info("JWKS fetched successfully: %d key(s)", len(_jwks_cache.get("keys", [])))
+    except Exception as exc:
+        logger.warning("Failed to fetch JWKS: %s", exc)
+    return _jwks_cache
+
+
+def _decode_token(token: str, jwks: dict) -> dict:
+    """Try ES256 (ECC) first via JWKS, then fall back to legacy HS256 secret."""
+    import jwt
+    from jwt.algorithms import ECAlgorithm
+
+    # 1. Try each public key from JWKS (ES256 / ECC P-256)
+    for key_data in jwks.get("keys", []):
+        try:
+            public_key = ECAlgorithm.from_jwk(key_data)
+            return jwt.decode(
+                token, public_key,
+                algorithms=["ES256"],
+                options={"verify_aud": False}
+            )
+        except Exception:
+            continue
+
+    # 2. Fallback: legacy HS256 shared secret (for old tokens still in circulation)
+    if SUPABASE_JWT_SECRET:
+        return jwt.decode(
+            token, SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False}
+        )
+
+    raise ValueError("No valid signing key found")
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Unauthenticated endpoints
-        if request.method == "OPTIONS" or request.url.path in ["/", "/favicon.ico", "/dashboard.html", "/family.html", "/reset-password.html", "/api/config"]:
+        if request.method == "OPTIONS" or request.url.path in [
+            "/", "/favicon.ico", "/dashboard.html", "/family.html",
+            "/reset-password.html", "/api/config"
+        ]:
             return await call_next(request)
         if request.url.path.startswith("/api/"):
             auth_header = request.headers.get("Authorization")
             if not auth_header or not auth_header.startswith("Bearer "):
-                return JSONResponse(status_code=401, content={"detail": "Unauthorized access"}, headers={"Access-Control-Allow-Origin": "*"})
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized access"},
+                    headers={"Access-Control-Allow-Origin": "*"}
+                )
             token = auth_header.split(" ")[1]
             try:
-                import jwt
-                # Supabase tokens use HS256 and contain 'aud': 'authenticated'
-                payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+                jwks = await _get_jwks()
+                payload = _decode_token(token, jwks)
                 request.state.user_id = payload.get("sub")
             except Exception as e:
-                return JSONResponse(status_code=401, content={"detail": "Invalid token"}, headers={"Access-Control-Allow-Origin": "*"})
+                logger.warning("JWT verification failed: %s", e)
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid token"},
+                    headers={"Access-Control-Allow-Origin": "*"}
+                )
         return await call_next(request)
 
 app.add_middleware(AuthMiddleware)
