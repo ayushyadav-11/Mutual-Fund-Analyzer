@@ -12,3 +12,4 @@ env.bak/
 venv.bak/
 session_data.json
 mutual_funds.db
+scratch.py

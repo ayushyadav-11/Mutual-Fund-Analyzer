@@ -14,7 +14,8 @@ from datetime import date
 
 import asyncio
 import httpx
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -215,6 +216,7 @@ def dashboard():
 # ─────────────────────────────────────────────────────────────────────────────
 @app.post("/api/parse")
 async def parse_pdf(
+    request: Request,
     file: UploadFile = File(...),
     password: str = Form(default=""),
     merge: bool = Query(False, description="Merge with existing session instead of overwriting")
@@ -398,6 +400,7 @@ def get_allocation(request: Request):
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/transactions")
 def get_transactions(
+    request: Request,
     isin: Optional[str] = None,
     txn_type: Optional[str] = None,
     limit: int = 200,
