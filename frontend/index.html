@@ -227,7 +227,7 @@
       }
     }
 
-    let supabase = null;
+    let supabaseClient = null;
     let authMode = 'login';
 
     function switchAuthTab(mode) {
@@ -260,11 +260,11 @@
       e.preventDefault();
       const email = document.getElementById('auth-email').value;
       if (!email) return showToast('❌ Please enter your email address above first.');
-      if (!supabase) return showToast('❌ Auth configuration not loaded yet.');
+      if (!supabaseClient) return showToast('❌ Auth configuration not loaded yet.');
       const authSubmitBtn = document.getElementById('auth-submit');
       authSubmitBtn.textContent = 'Sending...';
       try {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
           redirectTo: window.location.origin + '/reset-password.html'
         });
         if (error) throw error;
@@ -278,7 +278,7 @@
 
     async function handleAuthSubmit(e) {
       e.preventDefault();
-      if (!supabase) return showToast('❌ Auth config not loaded. Try refreshing the page.');
+      if (!supabaseClient) return showToast('❌ Auth config not loaded. Try refreshing the page.');
 
       const email = document.getElementById('auth-email').value;
       const password = document.getElementById('auth-password').value;
@@ -289,14 +289,14 @@
 
       try {
         if (authMode === 'login') {
-          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
           if (error) throw error;
           localStorage.setItem('mf_token', data.session.access_token);
           localStorage.setItem('mf_username', data.user.user_metadata?.username || email.split("@")[0]);
           checkAuth();
           showToast('🔑 Logged in successfully!');
         } else {
-          const { data, error } = await supabase.auth.signUp({
+          const { data, error } = await supabaseClient.auth.signUp({
             email,
             password,
             options: { data: { username } }
@@ -328,7 +328,7 @@
         const config = await res.json();
 
         if (config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
-          supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+          supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
           errorBanner.style.display = 'none';
         } else {
           throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
@@ -342,7 +342,7 @@
 
     navLogout.onclick = async (e) => {
       e.preventDefault();
-      if (supabase) await supabase.auth.signOut();
+      if (supabaseClient) await supabaseClient.auth.signOut();
       localStorage.removeItem('mf_token');
       localStorage.removeItem('mf_username');
       window.location.reload();
