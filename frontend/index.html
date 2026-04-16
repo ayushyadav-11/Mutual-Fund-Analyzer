@@ -226,6 +226,7 @@
     let authMode = 'login';
 
     function switchAuthTab(mode) {
+      alert("Tab clicked: " + mode);
       authMode = mode;
       const tabLogin = document.getElementById('tab-login');
       const tabSignup = document.getElementById('tab-signup');
