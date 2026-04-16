@@ -239,7 +239,11 @@ app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
 
 @app.get("/", include_in_schema=False)
 def root():
-    return FileResponse(str(frontend_dir / "index.html"))
+    response = FileResponse(str(frontend_dir / "index.html"))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Expires"] = "0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.get("/dashboard", include_in_schema=False)
