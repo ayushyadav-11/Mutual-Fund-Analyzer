@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MF Analyzer — Family Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    .family-container { max-width: 900px; margin: 40px auto; display: flex; flex-direction: column; gap: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    .invite-box { display: flex; gap: 10px; margin-top: 15px; }
+    .invite-box input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main); }
+    .invite-box button { padding: 10px 15px; border-radius: 6px; background: var(--accent); border: none; color: white; cursor: pointer; font-weight: 600; }
+    .pending-list { margin-top: 15px; display: flex; flex-direction: column; gap: 10px; }
+    .pending-item { display: flex; justify-content: space-between; align-items: center; background: var(--bg-primary); padding: 10px 15px; border-radius: 6px; }
+    .accept-btn { background: var(--success); border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 20px; }
+    .portfolio-card { background: var(--bg-card); padding: 20px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color); }
+    .portfolio-card h3 { margin-bottom: 15px; color: var(--accent-light); display: flex; align-items: center; gap: 8px; }
+    .metric { margin-bottom: 10px; display: flex; justify-content: space-between; }
+    .metric-label { color: var(--text-muted); font-size: 0.9rem; }
+    .metric-value { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">
+      <div class="logo-icon">📊</div>
+      <span>MF Analyzer</span>
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/">Upload</a></li>
+      <li><a href="/dashboard.html">Dashboard</a></li>
+      <li><a href="/family.html" class="active">Family View</a></li>
+      <li><a href="#" onclick="localStorage.removeItem('mf_token'); window.location.href='/';">Logout</a></li>
+    </ul>
+  </nav>
+
+  <main class="page">
+    <div class="family-container">
+      <div class="card" style="padding:24px;">
+        <h2>👨‍👩‍👧‍👦 Family Portfolio Dashboard</h2>
+        <p style="color:var(--text-secondary);margin-top:10px;">Compare your mutual fund portfolio performance with your family members.</p>
+      </div>
+
+      <div class="grid">
+        <!-- Send Invites -->
+        <div class="card" style="padding:24px;">
+          <h3>Add Family Member</h3>
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-top:5px;">Send an invite to their username.</p>
+          <div class="invite-box">
+            <input type="text" id="invite-username" placeholder="Enter username..." />
+            <button onclick="sendInvite()">Invite</button>
+          </div>
+        </div>
+
+        <!-- Pending Invites -->
+        <div class="card" style="padding:24px;">
+          <h3>Pending Invites</h3>
+          <div class="pending-list" id="pending-list">
+            <div style="color:var(--text-muted); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Family Portfolios Viewer -->
+      <div class="card" style="padding:24px;">
+        <h3>Family Portfolios Comparison</h3>
+        <div class="portfolio-grid" id="portfolio-grid">
+           <div class="spinner" style="margin: 20px auto;"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API = 'https://mutual-fund-analyzer-z48c.onrender.com';
+    const getApiUrl = () => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8000' : API;
+    
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg; toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 5000);
+    }
+
+    async function apiFetch(path, options = {}) {
+      const token = localStorage.getItem('mf_token');
+      if (!token) { window.location.href = '/'; return; }
+      const headers = { 'Content-Type': 'application/json', ...options.headers, 'Authorization': `Bearer ${token}` };
+      const res = await fetch(getApiUrl() + path, { ...options, headers });
+      if (res.status === 401) { window.location.href = '/'; throw new Error('Unauthorized'); }
+      if (!res.ok) {
+        let err = { detail: 'API Error' };
+        try { err = await res.json(); } catch(e) {}
+        throw new Error(err.detail || 'API error');
+      }
+      return res.json();
+    }
+
+    async function sendInvite() {
+        const username = document.getElementById('invite-username').value.trim();
+        if (!username) return;
+        try {
+            await apiFetch('/api/family/invite', { method: 'POST', body: JSON.stringify({ username }) });
+            document.getElementById('invite-username').value = '';
+            showToast(`✅ Invite sent to ${username}`);
+        } catch (e) {
+            showToast(`❌ ${e.message}`);
+        }
+    }
+
+    async function acceptInvite(from_user_id) {
+        try {
+            await apiFetch('/api/family/accept', { method: 'POST', body: JSON.stringify({ from_user_id }) });
+            showToast('✅ Invite accepted!');
+            loadPending();
+            loadPortfolios();
+        } catch (e) {
+             showToast(`❌ ${e.message}`);
+        }
+    }
+
+    async function loadPending() {
+        try {
+            const list = await apiFetch('/api/family/pending');
+            const container = document.getElementById('pending-list');
+            if (list.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted);font-size:0.9rem;">No pending invites.</div>';
+                return;
+            }
+            container.innerHTML = list.map(inv => `
+                <div class="pending-item">
+                    <span>${inv.username} invited you</span>
+                    <button class="accept-btn" onclick="acceptInvite('${inv.id}')">Accept</button>
+                </div>
+            `).join('');
+        } catch (e) {
+             console.error("Error loading pending invites:", e);
+        }
+    }
+
+    async function loadPortfolios() {
+        try {
+            const ports = await apiFetch('/api/family/portfolios');
+            const container = document.getElementById('portfolio-grid');
+            const currentUser = localStorage.getItem('mf_username');
+            
+            if (ports.length === 0) {
+                 container.innerHTML = '<div style="color:var(--text-muted);">No portfolio data found. You might need to upload your CAS PDF first.</div>';
+                 return;
+            }
+
+            container.innerHTML = ports.map(p => {
+                const gain = p.current_value - p.total_invested;
+                const gainPct = p.total_invested > 0 ? (gain / p.total_invested * 100).toFixed(2) : '0.00';
+                const isMe = p.username === currentUser;
+                
+                return `
+                <div class="portfolio-card">
+                    <h3>👤 ${p.username} ${isMe ? '<span style="font-size:0.75rem;padding:2px 6px;background:var(--accent);color:white;border-radius:10px;">You</span>' : ''}</h3>
+                    <div class="metric">
+                        <span class="metric-label">Total Invested</span>
+                        <span class="metric-value">₹${p.total_invested.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Current Value</span>
+                        <span class="metric-value text-accent">₹${p.current_value.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Absolute Gain</span>
+                        <span class="metric-value ${gain >= 0 ? 'text-success' : 'text-danger'}">
+                           ${gain >= 0 ? '+' : ''}${gainPct}%
+                        </span>
+                    </div>
+                    <div class="metric" style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                        <span class="metric-label">XIRR</span>
+                        <span class="metric-value ${p.xirr >= 0 ? 'text-warning' : 'text-danger'}">${p.xirr !== undefined ? p.xirr + '%' : 'N/A'}</span>
+                    </div>
+                </div>
+            `}).join('');
+        } catch (e) {
+             console.error("Error loading portfolios:", e);
+             document.getElementById('portfolio-grid').innerHTML = '<div style="color:var(--danger);">Error loading family portfolios.</div>';
+        }
+    }
+
+    // Init
+    loadPending();
+    loadPortfolios();
+  </script>
+</body>
+</html>

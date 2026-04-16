@@ -84,6 +84,29 @@ def initialize_database():
     conn = get_connection()
     cursor = conn.cursor()
     
+    # ── User & Authentication ──────────────────────────────────────────────────
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP
+        )
+    ''')
+    
+    # ── Family Links ───────────────────────────────────────────────────────────
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS family_links (
+            user_id_1 TEXT,
+            user_id_2 TEXT,
+            status TEXT,
+            last_updated_at TIMESTAMP,
+            PRIMARY KEY (user_id_1, user_id_2),
+            FOREIGN KEY (user_id_1) REFERENCES users (id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id_2) REFERENCES users (id) ON DELETE CASCADE
+        )
+    ''')
+    
     # Core Fund Information Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS schemes (
@@ -511,6 +534,104 @@ def save_portfolio_session(data_json: str, session_id: str = "master"):
         raise
     finally:
         conn.close()
+
+def create_user(username: str, password_hash: str) -> str:
+    import uuid
+    user_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)', (user_id, username, password_hash, now))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise ValueError(f"Username {username} may already exist") from e
+    finally:
+        conn.close()
+    return user_id
+
+def get_user_by_username(username: str) -> Optional[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT id, username, password_hash FROM users WHERE username = ?', (username,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_by_id(user_id: str) -> Optional[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT id, username, password_hash FROM users WHERE id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def accept_family_invite(user_id_1: str, user_id_2: str):
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        # Check if pending inverse relationship exists
+        c.execute('SELECT status FROM family_links WHERE user_id_1 = ? AND user_id_2 = ?', (user_id_2, user_id_1))
+        row = c.fetchone()
+        if row and row['status'] == 'pending':
+            c.execute('UPDATE family_links SET status = ?, last_updated_at = ? WHERE user_id_1 = ? AND user_id_2 = ?', 
+                      ('accepted', now, user_id_2, user_id_1))
+        else:
+            c.execute('''
+                INSERT INTO family_links (user_id_1, user_id_2, status, last_updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id_1, user_id_2) DO UPDATE SET
+                    status=excluded.status,
+                    last_updated_at=excluded.last_updated_at
+            ''', (user_id_2, user_id_1, 'accepted', now))
+            
+        c.execute('''
+            INSERT INTO family_links (user_id_1, user_id_2, status, last_updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id_1, user_id_2) DO UPDATE SET
+                status=excluded.status,
+                last_updated_at=excluded.last_updated_at
+        ''', (user_id_1, user_id_2, 'accepted', now))
+        conn.commit()
+    finally:
+        conn.close()
+
+def send_family_invite(from_user_id: str, to_user_id: str):
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute('''
+            INSERT INTO family_links (user_id_1, user_id_2, status, last_updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id_1, user_id_2) DO NOTHING
+        ''', (from_user_id, to_user_id, 'pending', now))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_family_members(user_id: str) -> List[str]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT user_id_2 FROM family_links WHERE user_id_1 = ? AND status = ?', (user_id, 'accepted'))
+    rows = c.fetchall()
+    conn.close()
+    return [row['user_id_2'] for row in rows]
+    
+def get_pending_invites(user_id: str) -> List[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT u.id, u.username 
+        FROM family_links f
+        JOIN users u ON f.user_id_1 = u.id
+        WHERE f.user_id_2 = ? AND f.status = 'pending'
+    ''', (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": row['id'], "username": row['username']} for row in rows]
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

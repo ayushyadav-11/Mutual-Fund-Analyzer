@@ -68,41 +68,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MASTER_PASSWORD = os.getenv("MASTER_PASSWORD", "admin123")
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
+JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-key")
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Exclude frontend root and login endpoints from auth logic
-        if request.method == "OPTIONS" or request.url.path in ["/", "/api/login", "/favicon.ico"]:
+        if request.method == "OPTIONS" or request.url.path in ["/", "/api/login", "/api/signup", "/favicon.ico", "/dashboard.html", "/family.html"]:
             return await call_next(request)
-        
-        # Guard internal API routes
         if request.url.path.startswith("/api/"):
-            # Check Bearer Token
             auth_header = request.headers.get("Authorization")
-            if not auth_header or auth_header != f"Bearer {MASTER_PASSWORD}":
-                return JSONResponse(
-                    status_code=401, 
-                    content={"detail": "Unauthorized access. Please login."},
-                    headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"}
-                )
-                
+            if not auth_header or not auth_header.startswith("Bearer "):
+                return JSONResponse(status_code=401, content={"detail": "Unauthorized access"}, headers={"Access-Control-Allow-Origin": "*"})
+            token = auth_header.split(" ")[1]
+            try:
+                import jwt
+                payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                request.state.user_id = payload.get("sub")
+            except Exception:
+                return JSONResponse(status_code=401, content={"detail": "Invalid token"}, headers={"Access-Control-Allow-Origin": "*"})
         return await call_next(request)
 
 app.add_middleware(AuthMiddleware)
 
-class LoginRequest(BaseModel):
+class SignupRequest(BaseModel):
+    username: str
     password: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/signup")
+async def signup(req: SignupRequest):
+    import bcrypt
+    from data.database import create_user
+    pwd_hash = bcrypt.hashpw(req.password.encode(), bcrypt.gensalt()).decode()
+    try:
+        create_user(req.username, pwd_hash)
+        return {"message": "User created successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/login")
 async def login(req: LoginRequest):
-    if req.password == MASTER_PASSWORD:
-        return {"token": MASTER_PASSWORD, "message": "Authenticated successfully"}
-    raise HTTPException(status_code=401, detail="Incorrect password")
+    import bcrypt, jwt
+    from data.database import get_user_by_username
+    user = get_user_by_username(req.username)
+    if not user or not bcrypt.checkpw(req.password.encode(), user["password_hash"].encode()):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    token = jwt.encode({"sub": user["id"]}, JWT_SECRET, algorithm="HS256")
+    return {"token": token, "message": "Authenticated successfully", "username": user["username"]}
+
 
 # Session file location (persists between requests)
 SESSION_FILE = os.path.join(os.path.dirname(__file__), "session_data.json")
@@ -218,11 +233,11 @@ async def parse_pdf(
         await fetch_latest_navs_from_mfapi(data.get("holdings", []))
         # Important: Recompute XIRR now that live NAVs are populated
         data = recompute_xirr(data)
-        save_session(data, SESSION_FILE, merge=merge)
+        save_session(data, request.state.user_id, merge=merge)
         
         # If merged, reload to return the combined dataset
         if merge:
-            data = load_session(SESSION_FILE)
+            data = load_session(request.state.user_id)
             
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -246,8 +261,8 @@ async def parse_pdf(
 # GET /api/summary
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/summary")
-def get_summary():
-    data = _load_or_404()
+def get_summary(request: Request):
+    data = _load_or_404(request.state.user_id)
     holdings = data["holdings"]
 
     total_invested = 0.0
@@ -302,8 +317,8 @@ def get_summary():
 # GET /api/holdings
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/holdings")
-def get_holdings():
-    data = _load_or_404()
+def get_holdings(request: Request):
+    data = _load_or_404(request.state.user_id)
     result = []
     for h in data["holdings"]:
         curr_nav = h.get("live_nav") or _get_last_nav(h["transactions"])
@@ -357,8 +372,8 @@ def get_holdings():
 # GET /api/allocation
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/allocation")
-def get_allocation():
-    data = _load_or_404()
+def get_allocation(request: Request):
+    data = _load_or_404(request.state.user_id)
     category_map = {}
     for h in data["holdings"]:
         cat = _normalize_category(h.get("category", "Other"))
@@ -387,7 +402,7 @@ def get_transactions(
     txn_type: Optional[str] = None,
     limit: int = 200,
 ):
-    data = _load_or_404()
+    data = _load_or_404(request.state.user_id)
     txns = data["all_transactions"]
 
     if isin:
@@ -403,8 +418,8 @@ def get_transactions(
 # GET /api/risk
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/risk")
-async def get_risk():
-    data = _load_or_404()
+async def get_risk(request: Request):
+    data = _load_or_404(request.state.user_id)
     
     # Offload the NAV synchronization strictly to the asynchronous SQLite collector worker
     from data.data_collector import fetch_and_populate_mfapi_data
@@ -426,8 +441,8 @@ async def get_risk():
 # GET /api/growth  — portfolio growth over time (invested vs value)
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/growth")
-def get_growth():
-    data = _load_or_404()
+def get_growth(request: Request):
+    data = _load_or_404(request.state.user_id)
     all_txns = sorted(data["all_transactions"], key=lambda x: x.get("date") or "")
 
     running_invested = 0.0
@@ -456,13 +471,13 @@ def get_growth():
 # GET /api/overlap
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/overlap")
-async def get_overlap(refresh: bool = False):
+async def get_overlap(request: Request, refresh: bool = False):
     """
     Fetch AMC monthly portfolio Excel files and compute pairwise overlap.
     Results are cached in session_data.json under 'overlap_cache'.
     Pass ?refresh=true to force a re-fetch.
     """
-    data = _load_or_404()
+    data = _load_or_404(request.state.user_id)
     holdings_list = [h for h in data.get("holdings", []) if h.get("units", 0) > 0.001]
 
     if not holdings_list:
@@ -579,11 +594,11 @@ async def get_overlap(refresh: bool = False):
 # GET /api/taxes
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/taxes")
-async def get_taxes():
+async def get_taxes(request: Request):
     """
     Computes current tax liability and exit loads based on FIFO sales of all holdings today.
     """
-    data = _load_or_404()
+    data = _load_or_404(request.state.user_id)
     txns = data.get("all_transactions", [])
     holdings = data.get("holdings", [])
     
@@ -606,14 +621,14 @@ class GoalRequest(BaseModel):
     include_current_portfolio: bool = True
 
 @app.post("/api/goal-strategy")
-async def get_goal_strategy(req: GoalRequest):
+async def get_goal_strategy(request: Request, req: GoalRequest):
     """
     Calculates SIP required to reach a goal and suggests asset allocation.
     """
     current_value = 0.0
     if req.include_current_portfolio:
         try:
-            data = _load_or_404()
+            data = _load_or_404(request.state.user_id)
             holdings = data.get("holdings", [])
             current_value = sum(h.get("current_value", 0) for h in holdings)
         except Exception:
@@ -634,12 +649,12 @@ class SimulationRequest(BaseModel):
     volatility_pct: float
 
 @app.post("/api/simulations")
-async def run_simulations(req: SimulationRequest):
+async def run_simulations(request: Request, req: SimulationRequest):
     """
     Runs both SIP Step-up deterministic model and Monte Carlo stochastic model.
     """
     try:
-        data = _load_or_404()
+        data = _load_or_404(request.state.user_id)
         holdings = data.get("holdings", [])
         current_value = 0.0
         for h in holdings:
@@ -667,11 +682,11 @@ async def run_simulations(req: SimulationRequest):
 # GET /api/stress-test
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/stress-test")
-async def get_stress_test():
+async def get_stress_test(request: Request):
     """
     Calculates portfolio drop in historical crash scenarios based on current allocation.
     """
-    data = _load_or_404()
+    data = _load_or_404(request.state.user_id)
     holdings = data.get("holdings", [])
     
     current_value = 0.0
@@ -700,11 +715,11 @@ class RebalanceRequest(BaseModel):
     target_equity_pct: float
 
 @app.post("/api/rebalance")
-async def get_rebalance(req: RebalanceRequest):
+async def get_rebalance(request: Request, req: RebalanceRequest):
     """
     Calculates trades required to reach target equity allocation.
     """
-    data = _load_or_404()
+    data = _load_or_404(request.state.user_id)
     holdings = data.get("holdings", [])
     
     # Needs updated current value from summary endpoint caching
@@ -716,11 +731,11 @@ async def get_rebalance(req: RebalanceRequest):
 # GET /api/dividends
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/dividends")
-async def get_dividends():
+async def get_dividends(request: Request):
     """
     Extracts total dividends from the transaction history.
     """
-    data = _load_or_404()
+    data = _load_or_404(request.state.user_id)
     txns = data.get("all_transactions", [])
     
     result = calculate_dividend_cashflow(txns)
@@ -731,7 +746,7 @@ async def get_dividends():
 # GET /api/fund/{isin} Deep-Dive Integration
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/fund/{isin}")
-async def get_fund_details(isin: str):
+async def get_fund_details(request: Request, isin: str):
     """Return fund details using Moneycontrol for metrics and Morningstar for portfolio composition."""
     from data.database import get_nav_series, DB_PATH, get_cached_fund_deep_dive, cache_fund_deep_dive, get_connection
 
@@ -746,7 +761,7 @@ async def get_fund_details(isin: str):
     holding_xirr = None
     active_holding = None
     try:
-        session_data = _load_or_404()
+        session_data = _load_or_404(request.state.user_id)
         active_holding = next((h for h in session_data.get("holdings", []) if h.get("isin") == isin), None)
         if active_holding:
             holding_xirr = active_holding.get("xirr")
@@ -1173,12 +1188,12 @@ class ChatRequest(BaseModel):
     message: str
 
 @app.post("/api/chat")
-def chat_with_advisor(req: ChatRequest):
+def chat_with_advisor(request: Request, req: ChatRequest):
     if not UPSTAGE_API_KEY:
         raise HTTPException(status_code=500, detail="Upstage API key not configured.")
         
     try:
-        data = _load_or_404()
+        data = _load_or_404(request.state.user_id)
     except Exception:
         raise HTTPException(status_code=400, detail="No portfolio data available context.")
 
@@ -1247,9 +1262,9 @@ Do not hallucinate funds they don't own. Frame your answers around their actual 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def _load_or_404() -> dict:
+def _load_or_404(user_id: str) -> dict:
     try:
-        return load_session(SESSION_FILE)
+        return load_session(user_id)
     except FileNotFoundError:
         raise HTTPException(
             status_code=404,
@@ -1582,3 +1597,72 @@ def _mc_extract_holdings(mc_portfolio: Any) -> list[dict]:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
+
+# ── Family Dashboard Routes ──────────────────────────────────────────────────
+class FamilyInviteRequest(BaseModel):
+    username: str
+
+@app.post("/api/family/invite")
+async def invite_family(request: Request, req: FamilyInviteRequest):
+    from data.database import get_user_by_username, send_family_invite
+    target_user = get_user_by_username(req.username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target_user['id'] == request.state.user_id:
+        raise HTTPException(status_code=400, detail="Cannot invite yourself")
+    send_family_invite(request.state.user_id, target_user['id'])
+    return {"status": "ok", "message": "Invite sent successfully"}
+
+@app.get("/api/family/pending")
+async def get_pending_invites(request: Request):
+    from data.database import get_pending_invites
+    return get_pending_invites(request.state.user_id)
+
+class AcceptInviteRequest(BaseModel):
+    from_user_id: str
+
+@app.post("/api/family/accept")
+async def accept_family_invite(request: Request, req: AcceptInviteRequest):
+    from data.database import accept_family_invite
+    accept_family_invite(req.from_user_id, request.state.user_id)
+    return {"status": "ok", "message": "Invite accepted"}
+
+@app.get("/api/family/portfolios")
+async def get_family_portfolios(request: Request):
+    from data.database import get_family_members, get_user_by_id
+    from core.parser import load_session
+    
+    user_ids = [request.state.user_id] + get_family_members(request.state.user_id)
+    portfolios = []
+    
+    for uid in user_ids:
+        try:
+            data = load_session(uid)
+            user_info = get_user_by_id(uid)
+            total_invested = 0.0
+            current_value = 0.0
+            for h in data.get("holdings", []):
+                curr_nav = h.get("live_nav")
+                if not curr_nav:
+                    navs = [(t["date"], t["nav"]) for t in h.get("transactions", []) if t.get("nav")]
+                    if navs:
+                        navs.sort(key=lambda x: x[0], reverse=True)
+                        curr_nav = navs[0][1]
+                val = h.get("units", 0) * (curr_nav if curr_nav else 0.0)
+                current_value += val
+                
+                invested = sum(abs(t["amount"]) for t in h.get("transactions", []) if t["type"] in ("BUY", "SIP", "SWITCH_IN", "DIVR")) - sum(abs(t["amount"]) for t in h.get("transactions", []) if t["type"] in ("SELL", "SWITCH_OUT"))
+                total_invested += invested
+                
+            portfolios.append({
+                "user_id": uid,
+                "username": user_info["username"] if user_info else "Unknown",
+                "total_invested": round(total_invested, 2),
+                "current_value": round(current_value, 2),
+                "xirr": data.get("portfolio_xirr")
+            })
+        except Exception:
+            pass
+            
+    return portfolios

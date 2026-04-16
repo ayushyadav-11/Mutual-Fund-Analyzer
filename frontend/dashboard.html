@@ -31,6 +31,8 @@
         <ul class="navbar-nav">
             <li><a href="/">Upload</a></li>
             <li><a href="/dashboard.html" class="active">Dashboard</a></li>
+            <li><a href="/family.html" id="nav-family">Family View</a></li>
+            <li><a href="#" id="nav-logout" onclick="localStorage.removeItem('mf_token'); window.location.href='/';">Logout</a></li>
         </ul>
     </nav>
 
@@ -1081,8 +1083,7 @@
             try {
                 // If there's no token at all, pop the login modal immediately to prevent useless fetch
                 if (!localStorage.getItem('mf_token')) {
-                    document.getElementById('login-modal').style.display = 'flex';
-                    document.getElementById('loading-overlay').style.display = 'none';
+                    window.location.href = '/';
                     return;
                 }
 
@@ -1094,8 +1095,7 @@
                 if (e.message.includes('404') || e.message.includes('No portfolio data found') || e.message.includes('upload your CAS PDF')) {
                     window.location.href = '/';
                 } else if (e.message.includes('Unauthorized')) {
-                    // Only show login modal if it's explicitly an auth failure
-                    document.getElementById('login-modal').style.display = 'flex';
+                    window.location.href = '/';
                 } else {
                     // Show actual database/backend errors!
                     alert("Backend Error: " + e.message + "\n\nThere might be a problem with your Supabase Connection!");
@@ -1114,7 +1114,7 @@
 
             const res = await fetch(API + path, { ...options, headers });
             if (res.status === 401) {
-                document.getElementById('login-modal').style.display = 'flex';
+                window.location.href = '/';
                 throw new Error('Unauthorized');
             }
             if (!res.ok) {
@@ -2305,73 +2305,6 @@
     </script>
     </div>
 
-    <!-- ── Authentication Gate ─────────────────────────────────────────── -->
-    <div id="login-modal"
-        style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10, 15, 27, 0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:9999;align-items:center;justify-content:center;flex-direction:column;">
-        <div
-            style="background:var(--card-bg);border:1px solid rgba(255,255,255,0.1);padding:40px;border-radius:24px;width:100%;max-width:400px;text-align:center;box-shadow:0 30px 60px rgba(0,0,0,0.5);">
-            <div style="font-size:2.5rem;margin-bottom:10px;">🔒</div>
-            <h2 style="color:var(--text-primary);margin-bottom:8px;font-size:1.4rem;">Private Portfolio</h2>
-            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:30px;line-height:1.5;">Enter the master
-                password to access this system.</p>
-
-            <input type="password" id="auth-password" placeholder="Master Password"
-                style="width:100%;padding:14px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);color:white;font-size:1rem;margin-bottom:20px;outline:none;transition:all 0.2s;"
-                onfocus="this.style.border='1px solid var(--accent)'"
-                onblur="this.style.border='1px solid rgba(255,255,255,0.1)'">
-
-            <button onclick="submitLogin()"
-                style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg, var(--accent), var(--accent-light));border:none;color:white;font-weight:700;font-size:1rem;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;">
-                Unlock Dashboard
-            </button>
-            <p id="login-error" style="color:#f87171;font-size:0.8rem;margin-top:15px;display:none;">Incorrect password
-            </p>
-        </div>
-    </div>
-
-    <script>
-        function showLoginModal() {
-            document.getElementById('login-modal').style.display = 'flex';
-        }
-
-        async function submitLogin() {
-            const pwd = document.getElementById('auth-password').value;
-            const btn = document.querySelector('#login-modal button');
-            const err = document.getElementById('login-error');
-
-            err.style.display = 'none';
-            btn.textContent = 'Verifying...';
-            btn.style.opacity = '0.7';
-
-            try {
-                const res = await fetch(API + '/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: pwd })
-                });
-
-                if (!res.ok) throw new Error('Incorrect password');
-
-                const data = await res.json();
-                localStorage.setItem('mf_token', data.token);
-
-                // Hide modal and restart initialization to fetch data natively
-                document.getElementById('login-modal').style.display = 'none';
-                init();
-            } catch (e) {
-                err.style.display = 'block';
-                err.textContent = e.message;
-            } finally {
-                btn.textContent = 'Unlock Dashboard';
-                btn.style.opacity = '1';
-            }
-        }
-
-        // Allow 'Enter' key submission
-        document.getElementById('auth-password').addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') submitLogin();
-        });
-    </script>
 </body>
 
 </html>
