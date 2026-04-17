@@ -39,6 +39,13 @@ async def _resolve_scheme_code(client: httpx.AsyncClient, isin: str, name: str) 
 
 async def _ingest_fund(client: httpx.AsyncClient, holding: dict, semaphore: asyncio.Semaphore):
     """Fetch + store historical NAV for a single holding."""
+    if semaphore:
+        async with semaphore:
+            await _ingest_fund_logic(client, holding)
+    else:
+        await _ingest_fund_logic(client, holding)
+
+async def _ingest_fund_logic(client: httpx.AsyncClient, holding: dict):
     isin  = holding.get("isin", "")
     name  = holding.get("name", "Unknown")
     units = holding.get("units", 0)
@@ -88,13 +95,13 @@ async def _ingest_fund(client: httpx.AsyncClient, holding: dict, semaphore: asyn
 
 async def fetch_and_populate_mfapi_data(holdings: list):
     """
-    Called by /api/risk on startup. Consecutively resolves scheme codes
-    and stores historical NAVs in SQLite/Postgres sequentially to prevent
-    connection bombing on Supavisor logic.
+    Called by /api/risk on startup. Parallelizes resolving scheme codes
+    and stores historical NAVs with a safe concurrency limit.
     """
+    sem = asyncio.Semaphore(10)
     async with httpx.AsyncClient(timeout=20.0) as client:
-        for holding in holdings:
-            await _ingest_fund(client, holding, None)
+        tasks = [_ingest_fund(client, holding, sem) for holding in holdings]
+        await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
