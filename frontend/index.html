@@ -210,20 +210,42 @@
     const navUserInfo = document.getElementById('nav-user-info');
     const navLogout = document.getElementById('nav-logout');
 
+    function showAuth() {
+      authSection.style.display = 'block';
+      uploadSection.style.display = 'none';
+      navUserInfo.style.display = 'none';
+      navLogout.style.display = 'none';
+    }
+
+    function showUpload(username) {
+      authSection.style.display = 'none';
+      uploadSection.style.display = 'block';
+      navUserInfo.style.display = 'inline-block';
+      navUserInfo.textContent = "Hello, " + (username || "User");
+      navLogout.style.display = 'inline-block';
+    }
+
     function checkAuth() {
       const token = localStorage.getItem('mf_token');
       const username = localStorage.getItem('mf_username');
-      if (token) {
-        authSection.style.display = 'none';
-        uploadSection.style.display = 'block';
-        navUserInfo.style.display = 'inline-block';
-        navUserInfo.textContent = "Hello, " + (username || "User");
-        navLogout.style.display = 'inline-block';
+      if (token) showUpload(username);
+      else showAuth();
+    }
+
+    // After supabase is ready, verify the session is actually alive
+    async function verifyAndCheckAuth() {
+      const { data } = await supabaseClient.auth.getSession();
+      if (data.session) {
+        const username = data.session.user.user_metadata?.username
+          || data.session.user.email.split('@')[0];
+        localStorage.setItem('mf_token', data.session.access_token);
+        localStorage.setItem('mf_username', username);
+        showUpload(username);
       } else {
-        authSection.style.display = 'block';
-        uploadSection.style.display = 'none';
-        navUserInfo.style.display = 'none';
-        navLogout.style.display = 'none';
+        // No valid live session — clear any stale stored tokens
+        localStorage.removeItem('mf_token');
+        localStorage.removeItem('mf_username');
+        showAuth();
       }
     }
 
@@ -332,12 +354,19 @@
 
           supabaseClient.auth.onAuthStateChange((event, session) => {
             if (session) {
+              const username = session.user.user_metadata?.username
+                || session.user.email.split('@')[0];
               localStorage.setItem('mf_token', session.access_token);
-              localStorage.setItem('mf_username', session.user.user_metadata?.username || session.user.email.split("@")[0]);
-              checkAuth();
+              localStorage.setItem('mf_username', username);
+              showUpload(username);
+            } else {
+              localStorage.removeItem('mf_token');
+              localStorage.removeItem('mf_username');
+              showAuth();
             }
           });
 
+          await verifyAndCheckAuth();
           errorBanner.style.display = 'none';
         } else {
           throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
