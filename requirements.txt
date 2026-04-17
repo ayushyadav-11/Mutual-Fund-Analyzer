@@ -15,3 +15,4 @@ pydantic
 redis
 requests
 psycopg2-binary
+PyJWT[crypto]
