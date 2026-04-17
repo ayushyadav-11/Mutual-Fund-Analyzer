@@ -104,7 +104,126 @@ async def fetch_and_populate_mfapi_data(holdings: list):
         await asyncio.gather(*tasks)
 
 
-if __name__ == "__main__":
+async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
+    """
+    Background task: pre-fetches MoneyControl + MorningStar deep-dive data
+    for all of a user's holdings right after PDF upload. Results are stored in
+    the DB cache tables so the first Risk tab click is instant.
+    """
+    from scrapers.morningstar import MorningstarScraper
+    from scrapers.moneycontrol import MoneyControlScraper
+    from data.database import (
+        cache_fund_deep_dive, mark_user_fund_cached, is_user_fund_cached,
+        get_cached_fund_deep_dive, insert_or_update_scheme
+    )
+    from core.parser import get_benchmark_ticker
+
+    sem = asyncio.Semaphore(5)  # Limit to 5 concurrent scrape sessions
+    loop = asyncio.get_event_loop()
+
+    logger.info(f"Pre-fetching deep dive for {len(holdings)} holdings (user: {user_id})")
+
+    async def _prefetch_one(holding: dict):
+        isin = holding.get("isin", "")
+        name = holding.get("name", "Unknown")
+        if not isin:
+            return
+
+        async with sem:
+            # Skip if already cached within 24h for this user
+            if is_user_fund_cached(user_id, isin, max_age_hours=24.0):
+                logger.debug(f"Pre-fetch skipped (already cached): {name} ({isin})")
+                return
+
+            # Also skip if there is already fresh fund-level cache (<24h old)
+            if get_cached_fund_deep_dive(isin, max_age_hours=24.0):
+                mark_user_fund_cached(user_id, isin)
+                logger.debug(f"Pre-fetch reused existing cache: {name} ({isin})")
+                return
+
+            try:
+                ms = MorningstarScraper()
+                mc = MoneyControlScraper()
+
+                ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
+                    loop.run_in_executor(None, ms.search_fund, name),
+                    loop.run_in_executor(None, mc.get_risk_metrics, isin),
+                    loop.run_in_executor(None, mc.get_performance, isin),
+                    loop.run_in_executor(None, mc.get_performance_yearly, isin),
+                    loop.run_in_executor(None, mc.get_performance_sip, isin),
+                    loop.run_in_executor(None, mc.get_fundamentals, isin),
+                    loop.run_in_executor(None, mc.get_overview, isin),
+                )
+
+                if mc_overview:
+                    mc_fund = {**mc_overview, **(mc_fund or {})}
+
+                # Inline extraction (mirrors the /api/fund/<isin> logic)
+                from app import _mc_extract_period_returns, _mc_extract_risk, _mc_extract_fundamentals, _mc_find_first
+
+                returns_data, benchmark_returns = _mc_extract_period_returns(mc_perf)
+                risk_returns, fallback_bm = _mc_extract_period_returns(mc_risk)
+                for k in returns_data:
+                    if returns_data.get(k) in (0.0, None) and risk_returns.get(k) not in (0.0, None):
+                        returns_data[k] = risk_returns[k]
+                for k in benchmark_returns:
+                    if benchmark_returns.get(k) in (0.0, None) and fallback_bm.get(k) not in (0.0, None):
+                        benchmark_returns[k] = fallback_bm[k]
+
+                bm_name = (
+                    _mc_find_first(mc_perf, "benchmark_name", "benchmark", "benchmarklabel")
+                    or _mc_find_first(mc_risk, "benchmark_name", "benchmark", "benchmarklabel")
+                    or get_benchmark_ticker(name, holding.get("category", ""))
+                )
+                risk_data = _mc_extract_risk(mc_risk, bm_name)
+                mc_fundamentals = _mc_extract_fundamentals(mc_fund)
+
+                sorted_holdings: list = []
+                sector_allocation: list = []
+                portfolio_turnover = mc_fundamentals.get("portfolio_turnover")
+
+                if ms_fund:
+                    try:
+                        ms_id = ms_fund["id"]
+                        raw_portfolio, fund_info = await asyncio.gather(
+                            loop.run_in_executor(None, ms.get_portfolio, ms_id),
+                            loop.run_in_executor(None, ms.get_fund_info, ms_id),
+                        )
+                        sorted_holdings = [
+                            {"asset": asset, "weight": round(weight * 100, 2)}
+                            for asset, weight in sorted(raw_portfolio.items(), key=lambda x: x[1], reverse=True)
+                        ][:20]
+                        sector_allocation = fund_info.get("sector_allocation", []) or []
+                        if mc_fundamentals["aum_cr"] is None:
+                            mc_fundamentals["aum_cr"] = fund_info.get("aum_cr")
+                        if mc_fundamentals["expense_ratio"] is None:
+                            mc_fundamentals["expense_ratio"] = fund_info.get("expense_ratio")
+                        if portfolio_turnover is None:
+                            portfolio_turnover = fund_info.get("portfolio_turnover_pct")
+                    except Exception:
+                        pass
+
+                fundms = {**mc_fundamentals, "portfolio_turnover": portfolio_turnover}
+
+                cache_fund_deep_dive(
+                    isin=isin,
+                    fundamentals=fundms,
+                    risk=risk_data,
+                    returns=returns_data,
+                    bench_returns=benchmark_returns,
+                    holdings=sorted_holdings,
+                    sectors=sector_allocation,
+                )
+                mark_user_fund_cached(user_id, isin)
+                logger.info(f"Pre-fetch cached: {name} ({isin})")
+
+            except Exception as e:
+                logger.warning(f"Pre-fetch failed for {name} ({isin}): {e}")
+
+    tasks = [_prefetch_one(h) for h in holdings if h.get("units", 0) > 0.001]
+    await asyncio.gather(*tasks)
+    logger.info(f"Pre-fetch complete for user {user_id} ({len(tasks)} funds)")
+
     import json, sys
     logging.basicConfig(level=logging.INFO)
 

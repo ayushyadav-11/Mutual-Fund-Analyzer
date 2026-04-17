@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.parser import parse_cas, save_session, load_session, recompute_xirr
 from core.risk import compute_risk_metrics
 from data.database import initialize_database
+from data.data_collector import fetch_and_populate_mfapi_data, fetch_latest_navs_from_mfapi, prefetch_deep_dive_for_user
 from core.portfolio_overlap import fetch_fund_holdings, compute_overlap, _scraper
 from core.advanced_analytics import calculate_taxes_and_loads, calculate_goal_strategy, calculate_sip_step_up, run_monte_carlo_simulation, calculate_stress_test, calculate_rebalance, calculate_dividend_cashflow
 
@@ -40,8 +41,8 @@ app = FastAPI(
 )
 logger = logging.getLogger(__name__)
 
-DEBUG_BYPASS_DEEP_DIVE_CACHE = True
-DEBUG_DISABLE_FUNDAMENTALS_FALLBACK = True
+DEBUG_BYPASS_DEEP_DIVE_CACHE = False
+DEBUG_DISABLE_FUNDAMENTALS_FALLBACK = False
 
 @app.get("/health")
 def health_check():
@@ -294,6 +295,11 @@ async def parse_pdf(
                 os.unlink(tmp_path)
         except OSError:
             pass
+
+    # Fire-and-forget: pre-fetch deep-dive data for all holdings in the background
+    # so the first Risk tab click is instant instead of waiting 10-20s per fund
+    user_id = request.state.user_id
+    asyncio.create_task(prefetch_deep_dive_for_user(user_id, data.get("holdings", [])))
 
     return {
         "status": "ok",
@@ -858,7 +864,7 @@ async def get_fund_details(request: Request, isin: str):
     # ── 2. Check SQLite Cache (1-Hour Expiration) ─────────────────────────────
     # Debug toggle: keep the live path hot while we inspect fundamentals parsing.
     # cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
-    cached_fund = None if DEBUG_BYPASS_DEEP_DIVE_CACHE else get_cached_fund_deep_dive(isin, max_age_hours=1)
+    cached_fund = None if DEBUG_BYPASS_DEEP_DIVE_CACHE else get_cached_fund_deep_dive(isin, max_age_hours=24)
     
     if cached_fund:
         fallback_benchmark = cached_fund.get("risk", {}).get("benchmark_name") or scheme["benchmark"]

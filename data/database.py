@@ -238,7 +238,17 @@ def initialize_database():
             expires_at REAL
         )
     ''')
-    
+
+    # ── Per-User Fund Pre-fetch Tracking ───────────────────────────────────────
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_fund_cache (
+            user_id   TEXT NOT NULL,
+            isin      TEXT NOT NULL,
+            cached_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (user_id, isin)
+        )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("Successfully initialized the core SQLite database engine and normalized schema.")
@@ -503,6 +513,39 @@ def get_cached_fund_deep_dive(isin: str, max_age_hours=1) -> Optional[dict]:
     
     conn.close()
     return result
+
+def mark_user_fund_cached(user_id: str, isin: str):
+    """Records that a fund's deep-dive data has been pre-fetched for this user."""
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute('''
+            INSERT INTO user_fund_cache (user_id, isin, cached_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, isin) DO UPDATE SET cached_at=excluded.cached_at
+        ''', (user_id, isin, datetime.now().isoformat()))
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"mark_user_fund_cached failed for {user_id}/{isin}: {e}")
+    finally:
+        conn.close()
+
+def is_user_fund_cached(user_id: str, isin: str, max_age_hours: float = 24.0) -> bool:
+    """Returns True if this user's fund data was pre-fetched within max_age_hours."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT cached_at FROM user_fund_cache WHERE user_id = ? AND isin = ?', (user_id, isin))
+    row = c.fetchone()
+    conn.close()
+    if not row or not row['cached_at']:
+        return False
+    try:
+        val = row['cached_at']
+        cached_at = datetime.fromisoformat(val) if isinstance(val, str) else val
+        age_hours = (datetime.now() - cached_at).total_seconds() / 3600
+        return age_hours <= max_age_hours
+    except (ValueError, TypeError):
+        return False
 
 def get_portfolio_session(session_id: str = "master") -> Optional[str]:
     """Retrieve raw JSON session data from the database."""
