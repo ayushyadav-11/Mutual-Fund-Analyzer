@@ -329,6 +329,15 @@
 
         if (config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
           supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+
+          supabaseClient.auth.onAuthStateChange((event, session) => {
+            if (session) {
+              localStorage.setItem('mf_token', session.access_token);
+              localStorage.setItem('mf_username', session.user.user_metadata?.username || session.user.email.split("@")[0]);
+              checkAuth();
+            }
+          });
+
           errorBanner.style.display = 'none';
         } else {
           throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY missing from backend config');
