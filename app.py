@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.parser import parse_cas, save_session, load_session, recompute_xirr
 from core.risk import compute_risk_metrics
 from data.database import initialize_database
-from data.data_collector import fetch_and_populate_mfapi_data, fetch_latest_navs_from_mfapi, prefetch_deep_dive_for_user
+from data.data_collector import fetch_and_populate_mfapi_data, prefetch_deep_dive_for_user
 from core.portfolio_overlap import fetch_fund_holdings, compute_overlap, _scraper
 from core.advanced_analytics import calculate_taxes_and_loads, calculate_goal_strategy, calculate_sip_step_up, run_monte_carlo_simulation, calculate_stress_test, calculate_rebalance, calculate_dividend_cashflow
 
