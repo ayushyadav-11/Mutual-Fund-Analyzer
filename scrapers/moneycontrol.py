@@ -5,7 +5,7 @@ from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
-DEBUG_BYPASS_MONEYCONTROL_CACHE = True
+DEBUG_BYPASS_MONEYCONTROL_CACHE = False
 
 class MoneyControlScraper:
     """Scrapes quantitative metrics from MoneyControl's internal API with 24h Redis caching."""
