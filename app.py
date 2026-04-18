@@ -896,6 +896,7 @@ async def get_fund_details(request: Request, isin: str):
         ms = MorningstarScraper()
         mc = MoneyControlScraper()
         import concurrent.futures
+        loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
                 loop.run_in_executor(pool, ms.search_fund, scheme_name),
