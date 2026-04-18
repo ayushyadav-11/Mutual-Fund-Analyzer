@@ -95,17 +95,18 @@ async def _get_jwks() -> dict:
 
 
 def _decode_token(token: str, jwks: dict) -> dict:
-    """Try ES256 (ECC) first via JWKS, then fall back to legacy HS256 secret."""
+    """Try JWKS public keys first (RS256/ES256), then fall back to legacy HS256 secret."""
     import jwt
-    from jwt.algorithms import ECAlgorithm
+    from jwt import PyJWK
 
-    # 1. Try each public key from JWKS (ES256 / ECC P-256)
+    # 1. Try each public key from JWKS (RS256 or ES256)
     for key_data in jwks.get("keys", []):
         try:
-            public_key = ECAlgorithm.from_jwk(key_data)
+            jwk = PyJWK.from_dict(key_data)
+            public_key = jwk.key
             return jwt.decode(
                 token, public_key,
-                algorithms=["ES256"],
+                algorithms=["RS256", "ES256"],
                 options={"verify_aud": False}
             )
         except Exception:
