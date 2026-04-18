@@ -159,7 +159,7 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
                     mc_fund = {**mc_overview, **(mc_fund or {})}
 
                 # Inline extraction (mirrors the /api/fund/<isin> logic)
-                from app import _mc_extract_period_returns, _mc_extract_risk, _mc_extract_fundamentals, _mc_find_first
+                from core.mc_helpers import _mc_extract_period_returns, _mc_extract_risk, _mc_extract_fundamentals, _mc_find_first
 
                 returns_data, benchmark_returns = _mc_extract_period_returns(mc_perf)
                 risk_returns, fallback_bm = _mc_extract_period_returns(mc_risk)
