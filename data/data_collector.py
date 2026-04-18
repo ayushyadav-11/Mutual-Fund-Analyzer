@@ -118,7 +118,10 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
     )
     from core.parser import get_benchmark_ticker
 
-    sem = asyncio.Semaphore(5)  # Limit to 5 concurrent scrape sessions
+    # Limit to 1 concurrent scrape session to prevent ThreadPoolExecutor exhaustion.
+    # Otherwise, 5 funds * 7 concurrent blocking functions = 35 threads, which 
+    # locks up Uvicorn's default threadpool and delays user API clicks.
+    sem = asyncio.Semaphore(1)  
     loop = asyncio.get_event_loop()
 
     logger.info(f"Pre-fetching deep dive for {len(holdings)} holdings (user: {user_id})")
@@ -130,6 +133,9 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
             return
 
         async with sem:
+            # Add a tiny delay between funds so normal API requests jump the async queue
+            await asyncio.sleep(0.5)
+
             # Skip if already cached within 24h for this user
             if is_user_fund_cached(user_id, isin, max_age_hours=24.0):
                 logger.debug(f"Pre-fetch skipped (already cached): {name} ({isin})")
@@ -145,15 +151,20 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
                 ms = MorningstarScraper()
                 mc = MoneyControlScraper()
 
-                ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
-                    loop.run_in_executor(None, ms.search_fund, name),
-                    loop.run_in_executor(None, mc.get_risk_metrics, isin),
-                    loop.run_in_executor(None, mc.get_performance, isin),
-                    loop.run_in_executor(None, mc.get_performance_yearly, isin),
-                    loop.run_in_executor(None, mc.get_performance_sip, isin),
-                    loop.run_in_executor(None, mc.get_fundamentals, isin),
-                    loop.run_in_executor(None, mc.get_overview, isin),
-                )
+                import concurrent.futures
+                
+                # Use a dedicated thread pool for background prefetch so we don't 
+                # starve Uvicorn's default pool (which only has ~5-6 threads on Render)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                    ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
+                        loop.run_in_executor(pool, ms.search_fund, name),
+                        loop.run_in_executor(pool, mc.get_risk_metrics, isin),
+                        loop.run_in_executor(pool, mc.get_performance, isin),
+                        loop.run_in_executor(pool, mc.get_performance_yearly, isin),
+                        loop.run_in_executor(pool, mc.get_performance_sip, isin),
+                        loop.run_in_executor(pool, mc.get_fundamentals, isin),
+                        loop.run_in_executor(pool, mc.get_overview, isin),
+                    )
 
                 if mc_overview:
                     mc_fund = {**mc_overview, **(mc_fund or {})}
