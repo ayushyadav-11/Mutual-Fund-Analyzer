@@ -895,16 +895,17 @@ async def get_fund_details(request: Request, isin: str):
         from scrapers.moneycontrol import MoneyControlScraper
         ms = MorningstarScraper()
         mc = MoneyControlScraper()
-        loop = asyncio.get_event_loop()
-        ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
-            loop.run_in_executor(None, ms.search_fund, scheme_name),
-            loop.run_in_executor(None, mc.get_risk_metrics, isin),
-            loop.run_in_executor(None, mc.get_performance, isin),
-            loop.run_in_executor(None, mc.get_performance_yearly, isin),
-            loop.run_in_executor(None, mc.get_performance_sip, isin),
-            loop.run_in_executor(None, mc.get_fundamentals, isin),
-            loop.run_in_executor(None, mc.get_overview, isin),
-        )
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
+                loop.run_in_executor(pool, ms.search_fund, scheme_name),
+                loop.run_in_executor(pool, mc.get_risk_metrics, isin),
+                loop.run_in_executor(pool, mc.get_performance, isin),
+                loop.run_in_executor(pool, mc.get_performance_yearly, isin),
+                loop.run_in_executor(pool, mc.get_performance_sip, isin),
+                loop.run_in_executor(pool, mc.get_fundamentals, isin),
+                loop.run_in_executor(pool, mc.get_overview, isin),
+            )
         # Merge overview data (AUM, expense, turnover) into mc_fund for _mc_extract_fundamentals
         if mc_overview:
             mc_fund = {**mc_overview, **(mc_fund or {})}
