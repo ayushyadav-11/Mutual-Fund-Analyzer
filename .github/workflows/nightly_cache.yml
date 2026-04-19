@@ -1,0 +1,30 @@
+name: Nightly Fund Cache Warmer
+
+on:
+  schedule:
+    # Runs at 20:30 UTC = 02:00 AM IST every night
+    - cron: '30 20 * * *'
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  prefetch-funds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90  # Max 1.5 hours — scraping 60+ funds one at a time
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run nightly fund prefetch
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/nightly_prefetch.py
