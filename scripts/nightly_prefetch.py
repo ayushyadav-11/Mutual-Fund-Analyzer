@@ -215,6 +215,18 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
 
 
 async def main():
+    # Abort immediately if DATABASE_URL is not set — writing to a blank SQLite
+    # on the GitHub runner is pointless since it gets wiped after every run.
+    if not os.getenv("DATABASE_URL"):
+        logger.error("DATABASE_URL is not set! Add it as a GitHub Actions secret.")
+        logger.error("Go to: GitHub repo → Settings → Secrets and variables → Actions → New secret")
+        sys.exit(1)
+
+    # Initialize database tables (creates them if they don't exist in Supabase)
+    from data.database import init_db
+    init_db()
+    logger.info("Database initialized successfully.")
+
     # Process funds one at a time to avoid hammering MoneyControl / Morningstar
     # and to stay within GitHub Actions' memory limits on a free runner
     sem = asyncio.Semaphore(1)
