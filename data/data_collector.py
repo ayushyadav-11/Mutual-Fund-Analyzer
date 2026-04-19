@@ -237,18 +237,3 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
     tasks = [_prefetch_one(h) for h in holdings if h.get("units", 0) > 0.001]
     await asyncio.gather(*tasks)
     logger.info(f"Pre-fetch complete for user {user_id} ({len(tasks)} funds)")
-
-    import json, sys
-    logging.basicConfig(level=logging.INFO)
-
-    try:
-        with open("session_data.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        print("session_data.json not found – trying database…")
-        from core.parser import load_session
-        data = load_session()
-
-    print("Ingesting historical NAVs from MFAPI…")
-    asyncio.run(fetch_and_populate_mfapi_data(data.get("holdings", [])))
-    print("Done.")
