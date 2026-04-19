@@ -312,6 +312,33 @@ async def parse_pdf(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /api/progress
+# ─────────────────────────────────────────────────────────────────────────────
+@app.get("/api/progress")
+def get_parse_progress(request: Request):
+    user_id = request.state.user_id
+    try:
+        from core.parser import load_session
+        data = load_session(user_id)
+        if not data:
+            return {"total": 0, "cached": 0, "status": "complete"}
+    except (FileNotFoundError, Exception):
+        return {"total": 0, "cached": 0, "status": "complete"}
+
+    holdings = data.get("holdings", [])
+    valid_funds = [h for h in holdings if h.get("units", 0) > 0.001 and h.get("isin")]
+    total = len(valid_funds)
+
+    from data.database import count_user_funds_cached
+    cached = count_user_funds_cached(user_id)
+
+    return {
+        "total": total,
+        "cached": cached,
+        "status": "complete" if cached >= total else "processing"
+    }
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /api/summary
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/summary")

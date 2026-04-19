@@ -443,8 +443,30 @@
           const err = await res.json(); throw new Error(err.detail || 'Parsing failed');
         }
         const result = await res.json();
-        progressLabel.textContent = `✅ Found ${result.funds} funds, ${result.transactions} transactions!`;
-        setTimeout(() => window.location.href = '/dashboard.html', 1000);
+        progressLabel.textContent = `✅ Parsed ${result.funds} funds! Initializing deep-dive cache...`;
+
+        // Start polling the backend for analysis progress
+        const pollInterval = setInterval(async () => {
+          try {
+            const pRes = await fetch(getApiUrl() + '/api/progress', {
+              headers: { 'Authorization': "Bearer " + token }
+            });
+            if (pRes.ok) {
+              const progress = await pRes.json();
+              if (progress.total > 0) {
+                progressLabel.textContent = `Generating Portfolio Report: ${progress.cached} / ${progress.total} funds fully analyzed...`;
+              }
+              if (progress.status === 'complete') {
+                clearInterval(pollInterval);
+                progressLabel.textContent = `🚀 Analysis Complete! Redirecting...`;
+                setTimeout(() => window.location.href = '/dashboard.html', 500);
+              }
+            }
+          } catch (pollErr) {
+            console.warn("Polling error:", pollErr);
+          }
+        }, 1500);
+
       } catch (err) {
         progressCard.style.display = 'none'; uploadCard.style.display = 'block'; showToast('❌ ' + err.message);
       }

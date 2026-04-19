@@ -547,6 +547,27 @@ def is_user_fund_cached(user_id: str, isin: str, max_age_hours: float = 24.0) ->
     except (ValueError, TypeError):
         return False
 
+def count_user_funds_cached(user_id: str, max_age_hours: float = 24.0) -> int:
+    """Returns the total number of funds uniquely cached for the user within max_age."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT cached_at FROM user_fund_cache WHERE user_id = ?', (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    
+    count = 0
+    now = datetime.now()
+    for row in rows:
+        val = row['cached_at']
+        if val:
+            try:
+                cached_at = datetime.fromisoformat(val) if isinstance(val, str) else val
+                if (now - cached_at).total_seconds() / 3600 <= max_age_hours:
+                    count += 1
+            except (ValueError, TypeError):
+                pass
+    return count
+
 def get_portfolio_session(session_id: str = "master") -> Optional[str]:
     """Retrieve raw JSON session data from the database."""
     conn = get_connection()
