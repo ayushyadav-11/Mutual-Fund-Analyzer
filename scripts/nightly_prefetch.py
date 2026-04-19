@@ -223,9 +223,12 @@ async def main():
         sys.exit(1)
 
     # Initialize database tables (creates them if they don't exist in Supabase)
-    from data.database import init_db
-    init_db()
-    logger.info("Database initialized successfully.")
+    from data.database import initialize_database, USE_POSTGRES
+    if not USE_POSTGRES:
+        logger.error("DATABASE_URL is set but Postgres mode is OFF. Check that the URL starts with 'postgresql://' or 'postgres://'")
+        sys.exit(1)
+    initialize_database()
+    logger.info(f"Database initialized — mode: {'Postgres/Supabase' if USE_POSTGRES else 'SQLite'}")
 
     # Process funds one at a time to avoid hammering MoneyControl / Morningstar
     # and to stay within GitHub Actions' memory limits on a free runner
