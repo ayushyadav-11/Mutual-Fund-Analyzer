@@ -1000,6 +1000,11 @@ async def get_fund_details(request: Request, isin: str):
 
         # Debug toggle: skip cache writes so each request reflects live scraper output.
         if not DEBUG_BYPASS_DEEP_DIVE_CACHE:
+            from data.database import insert_or_update_scheme as _insert_or_update_scheme
+            # Ensure ISIN exists in schemes table to satisfy Postgres foreign key constraint
+            await asyncio.get_event_loop().run_in_executor(
+                None, _insert_or_update_scheme, isin, scheme_name
+            )
             cache_fund_deep_dive(
                 isin=isin,
                 fundamentals=fundms,

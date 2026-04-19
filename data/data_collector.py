@@ -216,6 +216,9 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
 
                 fundms = {**mc_fundamentals, "portfolio_turnover": portfolio_turnover}
 
+                # Ensure the ISIN exists in the master schemes table first to satisfy FOREIGN KEY constraint
+                insert_or_update_scheme(isin=isin, scheme_name=name)
+
                 cache_fund_deep_dive(
                     isin=isin,
                     fundamentals=fundms,
