@@ -905,14 +905,13 @@ async def get_fund_details(request: Request, isin: str):
         fundms = cached_fund.get("fundamentals", {})
         
         mfapi_data = {
-
-                "aum_cr": fundms.get("aum_cr"),
-                "expense_ratio": fundms.get("expense_ratio"),
-                "exit_load": fundms.get("exit_load"),
-                "current_nav": None,
-                "nav_date": None,
-            }
-            portfolio_turnover = fundms.get("portfolio_turnover")
+            "aum_cr": fundms.get("aum_cr"),
+            "expense_ratio": fundms.get("expense_ratio"),
+            "exit_load": fundms.get("exit_load"),
+            "current_nav": None,
+            "nav_date": None,
+        }
+        portfolio_turnover = fundms.get("portfolio_turnover")
 
     if not cached_fund:
         # ── 3. Moneycontrol & Morningstar Fetching (Cache Miss) ──────────────────
