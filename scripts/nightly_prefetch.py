@@ -116,20 +116,29 @@ POPULAR_ISINS = [
     ("INF109K01Z59", "Parag Parikh Arbitrage Fund - Direct Plan - Growth"),
 ]
 
+# Abort immediately if DATABASE_URL is not set
+if not os.getenv("DATABASE_URL"):
+    logger.error("DATABASE_URL is not set! Add it as a GitHub Actions secret.")
+    logger.error("Go to: GitHub repo → Settings → Secrets and variables → Actions → New secret")
+    sys.exit(1)
+
+# Initialize database tables (creates them if they don't exist in Supabase)
+from data.database import initialize_database, USE_POSTGRES, cache_fund_deep_dive, insert_or_update_scheme
+if not USE_POSTGRES:
+    logger.error("DATABASE_URL is set but Postgres mode is OFF. Check that the URL starts with 'postgresql://' or 'postgres://'")
+    sys.exit(1)
+
+initialize_database()
+logger.info("Database initialized successfully — mode: Postgres/Supabase")
+
+from scrapers.moneycontrol import MoneyControlScraper
+from scrapers.morningstar import MorningstarScraper
+from core.mc_helpers import _mc_extract_period_returns, _mc_extract_risk, _mc_extract_fundamentals, _mc_find_first
+from core.parser import get_benchmark_ticker
+
 
 async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
     """Scrapes a single fund and persists the result to Supabase. Returns True on success."""
-    from scrapers.moneycontrol import MoneyControlScraper
-    from scrapers.morningstar import MorningstarScraper
-    from data.database import cache_fund_deep_dive, insert_or_update_scheme, get_cached_fund_deep_dive
-    from core.mc_helpers import _mc_extract_period_returns, _mc_extract_risk, _mc_extract_fundamentals, _mc_find_first
-    from core.parser import get_benchmark_ticker
-
-    # Skip if already freshly cached (< 23h old)
-    if get_cached_fund_deep_dive(isin, max_age_hours=23.0):
-        logger.info(f"[SKIP] [{isin}] {name} — fresh cache exists")
-        return True
-
     logger.info(f"[START] [{isin}] {name}")
 
     try:
@@ -215,21 +224,6 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
 
 
 async def main():
-    # Abort immediately if DATABASE_URL is not set — writing to a blank SQLite
-    # on the GitHub runner is pointless since it gets wiped after every run.
-    if not os.getenv("DATABASE_URL"):
-        logger.error("DATABASE_URL is not set! Add it as a GitHub Actions secret.")
-        logger.error("Go to: GitHub repo → Settings → Secrets and variables → Actions → New secret")
-        sys.exit(1)
-
-    # Initialize database tables (creates them if they don't exist in Supabase)
-    from data.database import initialize_database, USE_POSTGRES
-    if not USE_POSTGRES:
-        logger.error("DATABASE_URL is set but Postgres mode is OFF. Check that the URL starts with 'postgresql://' or 'postgres://'")
-        sys.exit(1)
-    initialize_database()
-    logger.info(f"Database initialized — mode: {'Postgres/Supabase' if USE_POSTGRES else 'SQLite'}")
-
     # Process funds one at a time to avoid hammering MoneyControl / Morningstar
     # and to stay within GitHub Actions' memory limits on a free runner
     sem = asyncio.Semaphore(1)
