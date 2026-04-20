@@ -94,7 +94,8 @@ FUND_BENCHMARK = {
     "mirae asset flexi cap fund": "^CNX100",
     "axis large cap fund": "BSE-100.BO",
     
-    "parag parikh flexi cap fund": "^CRSLDX",
+    "parag parikh long term equity": "^CRSLDX",
+    "parag parikh flexi cap": "^CRSLDX",
     "aditya birla sun life flexi cap fund": "^CRSLDX",
     "kotak flexicap fund": "^CRSLDX",
     

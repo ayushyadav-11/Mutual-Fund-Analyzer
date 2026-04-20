@@ -45,7 +45,7 @@ POPULAR_ISINS = [
     ("INF179K01ZT2", "HDFC Flexi Cap Fund - Direct Plan - Growth Option"),
     ("INF200K01VF6", "SBI Flexicap Fund-Direct Plan-Growth"),
     ("INF204K01DP1", "Nippon India Flexi Cap Fund - Direct Plan - Growth"),
-    ("INF109K01Z26", "Parag Parikh Flexi Cap Fund - Direct Plan - Growth"),
+    ("INF879O01027", "Parag Parikh Flexi Cap Fund - Direct Plan - Growth"),
     ("INF194K01DC8", "ICICI Prudential Flexicap Fund - Direct Plan - Growth"),
     ("INF173K01FX8", "Kotak Flexicap Fund - Direct Plan - Growth"),
 
@@ -108,6 +108,7 @@ POPULAR_ISINS = [
     ("INF200K01TQ6", "SBI Liquid Fund - Direct Plan - Growth"),
     ("INF194K01BK8", "ICICI Prudential Liquid Fund - Direct Plan - Growth"),
     ("INF204K01CY4", "Nippon India Liquid Fund - Direct Plan - Growth"),
+    ("INF109K01Z26", "Parag Parikh Liquid Fund - Direct Plan - Growth"),
     ("INF209K01QB5", "Aditya Birla Sun Life Liquid Fund - Direct Plan - Growth"),
 
     # === International / Thematic ===
