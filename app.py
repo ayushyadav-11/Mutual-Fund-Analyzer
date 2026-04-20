@@ -903,11 +903,9 @@ async def get_fund_details(request: Request, isin: str):
         sector_allocation = cached_fund.get("sectors", [])
         
         fundms = cached_fund.get("fundamentals", {})
-        # Stale cache detection: if price_sale is missing, this is an old cache entry — re-fetch
-        if fundms.get("price_sale") is None and fundms.get("pe") is None:
-            cached_fund = None  # Force cache miss path below
-        else:
-            mfapi_data = {
+        
+        mfapi_data = {
+
                 "aum_cr": fundms.get("aum_cr"),
                 "expense_ratio": fundms.get("expense_ratio"),
                 "exit_load": fundms.get("exit_load"),
