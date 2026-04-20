@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = Path("mutual_funds.db")
 DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.strip().strip("'").strip('"')
+
 USE_POSTGRES = bool(DATABASE_URL and DATABASE_URL.startswith("postgres"))
 
 if USE_POSTGRES:
