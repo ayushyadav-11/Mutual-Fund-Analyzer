@@ -11,7 +11,7 @@ class MorningstarScraper:
         self.token = None
         self.headers = {'User-Agent': 'Mozilla/5.0'}
         self.client = httpx.Client(timeout=15, follow_redirects=True)
-        self._refresh_token()
+        # Token refresh is deferred to the first API call to prevent blocking the async event loop during instantiation.
         
     def _refresh_token(self):
         url = 'https://www.morningstar.in/mutualfunds/f00000pzh2/fund/detailed-portfolio.aspx'
