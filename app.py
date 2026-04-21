@@ -1137,24 +1137,27 @@ async def get_fund_details(request: Request, isin: str):
     try:
         holding = next((h for h in session_data.get("holdings", []) if h.get("isin") == isin), None) if session_data else None
         benchmark_label = risk_data.get("benchmark_name") or fallback_benchmark
-        import pandas as pd
-        from datetime import date, timedelta
+        from datetime import datetime as _dt, date, timedelta
         from core.risk import _fetch_benchmark_returns
 
         if not navs:
             raise ValueError("No NAV data available; skipping chart")
 
-        nav_df = pd.DataFrame(navs)
-        nav_df["date"] = pd.to_datetime(nav_df["date"])
-        nav_df = nav_df.set_index("date").sort_index()
-        monthly_nav = nav_df["nav"].resample("ME").last().dropna()
+        # 1. Pure Python monthly NAV extraction (O(N), no pandas overhead)
+        monthly_nav_dict = {}
+        for row in sorted(navs, key=lambda x: x["date"]):
+            try:
+                ym = str(row["date"])[:7] # YYYY-MM
+                monthly_nav_dict[ym] = float(row["nav"])
+            except Exception:
+                continue
 
-        if monthly_nav.empty:
+        if not monthly_nav_dict:
             raise ValueError("Monthly NAV series is empty")
 
-        # Try to fetch benchmark (optional — chart still works without it)
+        # 2. Try to fetch benchmark (optional)
         bench_s = None
-        bench_monthly_nav = None
+        bench_monthly_dict = None
         if benchmark_symbol:
             bench_start = (date.today() - timedelta(days=5 * 365)).strftime("%Y-%m-%d")
             bench_end   = date.today().strftime("%Y-%m-%d")
@@ -1168,60 +1171,77 @@ async def get_fund_details(request: Request, isin: str):
                     )
                     if bench_s is not None:
                         _benchmark_cache[cache_key] = bench_s
+                        
                 if bench_s is not None:
-                    bench_monthly_nav = (1 + bench_s).cumprod()
+                    # bench_s is a pandas Series from yfinance. Cumprod is fast.
+                    bench_cumprod = (1 + bench_s).cumprod()
+                    bench_monthly_dict = {}
+                    for date_idx, val in bench_cumprod.items():
+                        ym = date_idx.strftime("%Y-%m") if hasattr(date_idx, 'strftime') else str(date_idx)[:7]
+                        bench_monthly_dict[ym] = float(val)
                 else:
                     _chart_logger.warning("Benchmark %s returned None for %s; rendering fund-only chart", benchmark_symbol, isin)
             except Exception as _be:
                 _chart_logger.warning("Benchmark fetch failed for %s / %s: %s", isin, benchmark_symbol, _be)
 
-        # Collect SIP transactions (fund must be in portfolio)
+        # 3. Collect SIP transactions (fund must be in portfolio)
         sip_txns = []
         if holding:
             sip_txns = [t for t in holding.get("transactions", [])
                         if t["type"] in ("SIP", "BUY", "SWITCH_IN") and t.get("nav") and t.get("amount")]
-            sip_txns.sort(key=lambda x: x["date"])
+            sip_txns.sort(key=lambda x: str(x["date"]))
 
         labels, fund_vals, bench_vals = [], [], []
+        
+        # Take the last 60 months (5 years)
+        recent_months = sorted(monthly_nav_dict.keys())[-60:]
 
-        if sip_txns and bench_monthly_nav is not None:
+        if sip_txns and bench_monthly_dict is not None:
             # ── Path A: actual SIP wealth chart ─────────────────────────────
             fund_units = 0.0
             bench_units = 0.0
             for txn in sip_txns:
-                d = pd.Timestamp(txn["date"])
+                txn_ym = str(txn["date"])[:7]
                 amount = abs(txn["amount"])
                 fund_units += amount / txn["nav"]
-                ym = d.to_period("M")
-                matches = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
-                if not matches.empty:
-                    bench_units += amount / (100.0 * float(matches.iloc[-1]))
-            for ts, nav_val in monthly_nav[-60:].items():
-                labels.append(ts.strftime("%b %Y"))
-                fund_vals.append(round(fund_units * float(nav_val), 2))
-                ym = ts.to_period("M")
-                bm = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
-                bench_vals.append(round(bench_units * 100.0 * float(bm.iloc[-1]) if not bm.empty else 0, 2))
+                
+                # Match benchmark unit purchase
+                bm_val = bench_monthly_dict.get(txn_ym)
+                if bm_val:
+                    bench_units += amount / (100.0 * bm_val)
+                    
+            for ym in recent_months:
+                nav_val = monthly_nav_dict[ym]
+                dt_obj = _dt.strptime(ym, "%Y-%m")
+                labels.append(dt_obj.strftime("%b %Y"))
+                fund_vals.append(round(fund_units * nav_val, 2))
+                
+                bm_val = bench_monthly_dict.get(ym)
+                bench_vals.append(round(bench_units * 100.0 * bm_val if bm_val else 0, 2))
+                
             chart_type = "sip"
         else:
             # ── Path B: ₹10,000 lumpsum NAV growth (benchmark optional) ─────
             start_nav = None
             start_bench = None
-            for ts, nav_val in monthly_nav[-60:].items():
+            
+            for ym in recent_months:
+                nav_val = monthly_nav_dict[ym]
                 if start_nav is None:
-                    start_nav = float(nav_val)
-                    if bench_monthly_nav is not None:
-                        ym0 = ts.to_period("M")
-                        bm0 = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym0]
-                        start_bench = float(bm0.iloc[-1]) if not bm0.empty else None
-                labels.append(ts.strftime("%b %Y"))
-                fund_vals.append(round(10000 * float(nav_val) / start_nav, 2))
-                if bench_monthly_nav is not None and start_bench:
-                    ym = ts.to_period("M")
-                    bm = bench_monthly_nav[bench_monthly_nav.index.to_period("M") == ym]
-                    bench_vals.append(round(float(bm.iloc[-1]) / start_bench * 10000 if not bm.empty else 0, 2))
+                    start_nav = nav_val
+                    if bench_monthly_dict is not None:
+                        start_bench = bench_monthly_dict.get(ym)
+                        
+                dt_obj = _dt.strptime(ym, "%Y-%m")
+                labels.append(dt_obj.strftime("%b %Y"))
+                fund_vals.append(round(10000 * nav_val / start_nav, 2))
+                
+                if bench_monthly_dict is not None and start_bench:
+                    bm_val = bench_monthly_dict.get(ym)
+                    bench_vals.append(round((bm_val / start_bench) * 10000 if bm_val else 0, 2))
                 else:
                     bench_vals.append(None)
+                    
             chart_type = "growth"
 
         if labels:
