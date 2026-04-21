@@ -17,6 +17,21 @@ USE_POSTGRES = bool(DATABASE_URL and DATABASE_URL.startswith("postgres"))
 if USE_POSTGRES:
     import psycopg2
     from psycopg2.extras import RealDictCursor
+    from psycopg2.pool import ThreadedConnectionPool
+    
+    # Initialize global pool
+    _db_url = DATABASE_URL
+    if "?" not in _db_url:
+        _db_url += "?sslmode=require"
+    elif "sslmode" not in _db_url:
+        _db_url += "&sslmode=require"
+        
+    try:
+        # min 1 connection, max 10 connections
+        _pg_pool = ThreadedConnectionPool(1, 10, _db_url)
+    except Exception as e:
+        logger.error(f"FATAL: psycopg2 failed to create ThreadedConnectionPool! Error: {str(e)}")
+        raise e
 
 class AgnosticCursor:
     def __init__(self, cursor):
@@ -50,8 +65,9 @@ class AgnosticCursor:
     def fetchall(self): return self.cursor.fetchall()
 
 class AgnosticConnection:
-    def __init__(self, conn):
+    def __init__(self, conn, is_pooled=False):
         self.conn = conn
+        self.is_pooled = is_pooled
         
     def cursor(self):
         c = self.conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else self.conn.cursor()
@@ -59,28 +75,25 @@ class AgnosticConnection:
         
     def commit(self): self.conn.commit()
     def rollback(self): self.conn.rollback()
-    def close(self): self.conn.close()
+    def close(self):
+        if self.is_pooled and USE_POSTGRES:
+            _pg_pool.putconn(self.conn)
+        else:
+            self.conn.close()
 
 def get_connection():
     """Returns an agnostic connection instance wrapping SQLite or Postgres perfectly."""
     if USE_POSTGRES:
-        # Supabase/Render often require sslmode=require if connecting from external apps
-        db_url = DATABASE_URL
-        if "?" not in db_url:
-            db_url += "?sslmode=require"
-        elif "sslmode" not in db_url:
-            db_url += "&sslmode=require"
-            
         try:
-            conn = psycopg2.connect(db_url)
+            conn = _pg_pool.getconn()
+            return AgnosticConnection(conn, is_pooled=True)
         except Exception as e:
-            logger.error(f"FATAL: psycopg2 failed to connect to Postgres! URL: {db_url.split('@')[-1]} Error: {str(e)}")
+            logger.error(f"FATAL: psycopg2 failed to get connection from pool! Error: {str(e)}")
             raise e
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
-        
-    return AgnosticConnection(conn)
+        return AgnosticConnection(conn, is_pooled=False)
 
 def initialize_database():
     """Creates normalized database structures if they don't natively exist."""
