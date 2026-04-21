@@ -14,6 +14,9 @@ from datetime import date
 
 import asyncio
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -27,7 +30,7 @@ from data.data_collector import fetch_and_populate_mfapi_data, prefetch_deep_div
 from core.portfolio_overlap import fetch_fund_holdings, compute_overlap, _scraper
 from core.advanced_analytics import calculate_taxes_and_loads, calculate_goal_strategy, calculate_sip_step_up, run_monte_carlo_simulation, calculate_stress_test, calculate_rebalance, calculate_dividend_cashflow
 
-from dotenv import load_dotenv
+
 load_dotenv()
 from openai import OpenAI
 from pydantic import BaseModel
@@ -914,22 +917,18 @@ async def get_fund_details(request: Request, isin: str):
         portfolio_turnover = fundms.get("portfolio_turnover")
 
     if not cached_fund:
-        # ── 3. Moneycontrol & Morningstar Fetching (Cache Miss) ──────────────────
         from scrapers.morningstar import MorningstarScraper
         from scrapers.moneycontrol import MoneyControlScraper
-        ms = MorningstarScraper()
-        mc = MoneyControlScraper()
-        import concurrent.futures
-        loop = asyncio.get_event_loop()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        
+        async with MoneyControlScraper() as mc, MorningstarScraper() as ms:
             ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
-                loop.run_in_executor(pool, ms.search_fund, scheme_name),
-                loop.run_in_executor(pool, mc.get_risk_metrics, isin),
-                loop.run_in_executor(pool, mc.get_performance, isin),
-                loop.run_in_executor(pool, mc.get_performance_yearly, isin),
-                loop.run_in_executor(pool, mc.get_performance_sip, isin),
-                loop.run_in_executor(pool, mc.get_fundamentals, isin),
-                loop.run_in_executor(pool, mc.get_overview, isin),
+                ms.search_fund(scheme_name),
+                mc.get_risk_metrics(isin),
+                mc.get_performance(isin),
+                mc.get_performance_yearly(isin),
+                mc.get_performance_sip(isin),
+                mc.get_fundamentals(isin),
+                mc.get_overview(isin),
             )
         # Merge overview data (AUM, expense, turnover) into mc_fund for _mc_extract_fundamentals
         if mc_overview:
@@ -974,10 +973,11 @@ async def get_fund_details(request: Request, isin: str):
         if ms_fund:
             try:
                 ms_id = ms_fund["id"]
-                raw_portfolio, fund_info = await asyncio.gather(
-                    loop.run_in_executor(None, ms.get_portfolio, ms_id),
-                    loop.run_in_executor(None, ms.get_fund_info, ms_id),
-                )
+                async with MorningstarScraper() as ms:
+                    raw_portfolio, fund_info = await asyncio.gather(
+                        ms.get_portfolio(ms_id),
+                        ms.get_fund_info(ms_id),
+                    )
                 sorted_holdings = [
                     {"asset": asset, "weight": round(weight * 100, 2)}
                     for asset, weight in sorted(raw_portfolio.items(), key=lambda item: item[1], reverse=True)
@@ -1051,41 +1051,44 @@ async def get_fund_details(request: Request, isin: str):
             pass
 
     try:
-        import requests as _requests, time as _time
+        import httpx as _httpx
+        import asyncio as _asyncio
+        import urllib.parse as _urllib_parse
         from data.database import insert_or_update_scheme as _insert_or_update_scheme
 
-        def _resolve_scheme_code_for_nav(code, fund_name, fund_isin):
+        async def _resolve_scheme_code_for_nav(code, fund_name, fund_isin):
             if code:
                 return code
 
             try:
-                query = _requests.utils.quote((fund_name or "")[:60])
-                r = _requests.get(f"https://api.mfapi.in/mf/search?q={query}", timeout=10)
-                r.raise_for_status()
-                results = r.json() or []
-                for entry in results:
-                    if fund_isin in (entry.get("isinGrowth"), entry.get("isinDivReinvestment")):
-                        return entry.get("schemeCode")
-                if results:
-                    return results[0].get("schemeCode")
+                query = _urllib_parse.quote((fund_name or "")[:60])
+                async with _httpx.AsyncClient(timeout=10.0) as client:
+                    r = await client.get(f"https://api.mfapi.in/mf/search?q={query}")
+                    r.raise_for_status()
+                    results = r.json() or []
+                    for entry in results:
+                        if fund_isin in (entry.get("isinGrowth"), entry.get("isinDivReinvestment")):
+                            return entry.get("schemeCode")
+                    if results:
+                        return results[0].get("schemeCode")
             except Exception:
                 return None
             return None
 
-        def _fetch_nav(code):
+        async def _fetch_nav(code):
             for attempt in range(3):
                 try:
-                    r = _requests.get(f"https://api.mfapi.in/mf/{code}", timeout=10)
-                    r.raise_for_status()
-                    return r.json()
+                    async with _httpx.AsyncClient(timeout=10.0) as client:
+                        r = await client.get(f"https://api.mfapi.in/mf/{code}")
+                        r.raise_for_status()
+                        return r.json()
                 except Exception:
                     if attempt < 2:
-                        _time.sleep(1)
+                        await _asyncio.sleep(1)
             raise Exception(f"mfapi failed for scheme {code} after 3 attempts")
 
-        resolved_scheme_code = await asyncio.get_event_loop().run_in_executor(
-            None, _resolve_scheme_code_for_nav, scheme_code, scheme_name, isin
-        )
+        resolved_scheme_code = await _resolve_scheme_code_for_nav(scheme_code, scheme_name, isin)
+        
         if resolved_scheme_code and resolved_scheme_code != scheme_code:
             scheme_code = resolved_scheme_code
             await asyncio.get_event_loop().run_in_executor(
@@ -1093,7 +1096,7 @@ async def get_fund_details(request: Request, isin: str):
             )
 
         if scheme_code:
-            detail = await asyncio.get_event_loop().run_in_executor(None, _fetch_nav, scheme_code)
+            detail = await _fetch_nav(scheme_code)
             nav_data = detail.get("data", [])
             if nav_data:
                 mfapi_data["current_nav"] = float(nav_data[0]["nav"])

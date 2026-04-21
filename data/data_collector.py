@@ -148,22 +148,15 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
                 return
 
             try:
-                ms = MorningstarScraper()
-                mc = MoneyControlScraper()
-
-                import concurrent.futures
-                
-                # Use a dedicated thread pool for background prefetch so we don't 
-                # starve Uvicorn's default pool (which only has ~5-6 threads on Render)
-                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                async with MorningstarScraper() as ms, MoneyControlScraper() as mc:
                     ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
-                        loop.run_in_executor(pool, ms.search_fund, name),
-                        loop.run_in_executor(pool, mc.get_risk_metrics, isin),
-                        loop.run_in_executor(pool, mc.get_performance, isin),
-                        loop.run_in_executor(pool, mc.get_performance_yearly, isin),
-                        loop.run_in_executor(pool, mc.get_performance_sip, isin),
-                        loop.run_in_executor(pool, mc.get_fundamentals, isin),
-                        loop.run_in_executor(pool, mc.get_overview, isin),
+                        ms.search_fund(name),
+                        mc.get_risk_metrics(isin),
+                        mc.get_performance(isin),
+                        mc.get_performance_yearly(isin),
+                        mc.get_performance_sip(isin),
+                        mc.get_fundamentals(isin),
+                        mc.get_overview(isin),
                     )
 
                 if mc_overview:
@@ -195,11 +188,11 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
 
                 if ms_fund:
                     try:
-                        ms_id = ms_fund["id"]
-                        raw_portfolio, fund_info = await asyncio.gather(
-                            loop.run_in_executor(None, ms.get_portfolio, ms_id),
-                            loop.run_in_executor(None, ms.get_fund_info, ms_id),
-                        )
+                        async with MorningstarScraper() as ms:
+                            raw_portfolio, fund_info = await asyncio.gather(
+                                ms.get_portfolio(ms_id),
+                                ms.get_fund_info(ms_id),
+                            )
                         sorted_holdings = [
                             {"asset": asset, "weight": round(weight * 100, 2)}
                             for asset, weight in sorted(raw_portfolio.items(), key=lambda x: x[1], reverse=True)

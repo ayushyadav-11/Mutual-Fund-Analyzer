@@ -7,16 +7,31 @@ from typing import Optional, Dict
 logger = logging.getLogger(__name__)
 
 class MorningstarScraper:
-    def __init__(self):
+    def __init__(self, client: Optional[httpx.AsyncClient] = None):
         self.token = None
         self.headers = {'User-Agent': 'Mozilla/5.0'}
-        self.client = httpx.Client(timeout=15, follow_redirects=True)
-        # Token refresh is deferred to the first API call to prevent blocking the async event loop during instantiation.
+        self._client = client
+        self._owns_client = False
         
-    def _refresh_token(self):
+    async def __aenter__(self):
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=15.0, follow_redirects=True)
+            self._owns_client = True
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._owns_client and self._client:
+            await self._client.aclose()
+        
+    async def _refresh_token(self):
         url = 'https://www.morningstar.in/mutualfunds/f00000pzh2/fund/detailed-portfolio.aspx'
         try:
-            r = self.client.get(url, headers=self.headers)
+            if self._client:
+                r = await self._client.get(url, headers=self.headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r = await client.get(url, headers=self.headers)
+                    
             tokens = re.findall(r'(eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)', r.text)
             if tokens:
                 self.token = max(tokens, key=len)
@@ -25,7 +40,7 @@ class MorningstarScraper:
         except: pass
         return False
 
-    def search_fund(self, query: str) -> Optional[Dict[str, str]]:
+    async def search_fund(self, query: str) -> Optional[Dict[str, str]]:
         # Strip CAS-specific boilerplate to achieve 100% Morningstar match rate
         # We strip non-alphanumeric and common keywords to find the "Master" scheme
         clean = re.sub(r'(?i)\b(fund|direct|regular|growth|dividend|plan|option|idcw|reinvestment|payout|cumulative)\b', '', query)
@@ -38,7 +53,12 @@ class MorningstarScraper:
         
         url = f'https://www.morningstar.in/handlers/autocompletehandler.ashx?criteria={clean}'
         try:
-            r = self.client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+            if self._client:
+                r = await self._client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r = await client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    
             soup = BeautifulSoup(r.text, 'html.parser')
             for table in soup.find_all('table'):
                 t_type = table.find('type')
@@ -49,11 +69,16 @@ class MorningstarScraper:
         except: pass
         return None
 
-    def get_portfolio(self, mstar_id: str) -> Dict[str, float]:
-        if not self.token and not self._refresh_token(): return {}
+    async def get_portfolio(self, mstar_id: str) -> Dict[str, float]:
+        if not self.token and not await self._refresh_token(): return {}
         url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/holding/v2/{mstar_id}/data?locale=en&clientId=RSIN_SAL'
         try:
-            r = self.client.get(url, headers=self.headers)
+            if self._client:
+                r = await self._client.get(url, headers=self.headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r = await client.get(url, headers=self.headers)
+                    
             if r.status_code == 200:
                 data = r.json()
                 holdings = {}
@@ -70,12 +95,17 @@ class MorningstarScraper:
             logger.error(f"Portfolio fetch failed for {mstar_id}: {e}")
         return {}
 
-    def get_benchmark(self, mstar_id: str) -> Optional[str]:
+    async def get_benchmark(self, mstar_id: str) -> Optional[str]:
         """Extracts the exact Native Benchmark (e.g. 'Nifty 500 TR INR') from the Portfolio Schema."""
-        if not self.token and not self._refresh_token(): return None
+        if not self.token and not await self._refresh_token(): return None
         url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/holding/v2/{mstar_id}/data?locale=en&clientId=RSIN_SAL'
         try:
-            r = self.client.get(url, headers=self.headers)
+            if self._client:
+                r = await self._client.get(url, headers=self.headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r = await client.get(url, headers=self.headers)
+                    
             if r.status_code == 200:
                 data = r.json()
                 bm = data.get('holdingActiveShare', {}).get('primaryProspectusBenchmark')
@@ -84,12 +114,12 @@ class MorningstarScraper:
             logger.error(f"Benchmark fetch failed for {mstar_id}: {e}")
         return None
 
-    def get_fund_info(self, mstar_id: str) -> Dict:
+    async def get_fund_info(self, mstar_id: str) -> Dict:
         """
         Fetch sector allocation, AUM, expense ratio, and turnover from Morningstar.
         Returns a dict with: sector_allocation, portfolio_turnover_pct, aum_cr, expense_ratio
         """
-        if not self.token and not self._refresh_token():
+        if not self.token and not await self._refresh_token():
             return {}
         
         info = {
@@ -102,7 +132,12 @@ class MorningstarScraper:
         try:
             # 1. Quote endpoint for AUM, Expense Ratio, and Turnover
             q_url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/quote/v2/{mstar_id}/data?clientId=RSIN_SAL'
-            r_q = self.client.get(q_url, headers=self.headers)
+            if self._client:
+                r_q = await self._client.get(q_url, headers=self.headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r_q = await client.get(q_url, headers=self.headers)
+                    
             if r_q.status_code == 200:
                 q_data = r_q.json()
                 
@@ -121,7 +156,12 @@ class MorningstarScraper:
 
             # 2. Sector endpoint for Equity Sector Breakdown
             s_url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/v2/sector/{mstar_id}/data?clientId=RSIN_SAL'
-            r_s = self.client.get(s_url, headers=self.headers)
+            if self._client:
+                r_s = await self._client.get(s_url, headers=self.headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r_s = await client.get(s_url, headers=self.headers)
+                    
             if r_s.status_code == 200:
                 s_data = r_s.json()
                 eq_portfolio = s_data.get('EQUITY', {}).get('fundPortfolio', {})
@@ -142,7 +182,7 @@ class MorningstarScraper:
             
         return info
 
-def get_rbi_repo_rate() -> float:
+async def get_rbi_repo_rate() -> float:
     """
     Dynamically scrape the RBI's official Policy Repo Rate to act as the exact base 
     for the 91-Day T-Bill Risk-Free Rate calculations.
@@ -150,8 +190,8 @@ def get_rbi_repo_rate() -> float:
     """
     try:
         # RBI occasionally has strict SSL certs, bypass verify for stability on the homepage scrape
-        with httpx.Client(timeout=10.0, verify=False) as client:
-            r = client.get('https://www.rbi.org.in/', headers={'User-Agent': 'Mozilla/5.0'})
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            r = await client.get('https://www.rbi.org.in/', headers={'User-Agent': 'Mozilla/5.0'})
             if r.status_code == 200:
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(r.text, 'html.parser')
@@ -166,4 +206,5 @@ def get_rbi_repo_rate() -> float:
     except Exception as e:
         logger.warning(f"Failed to fetch dynamic RBI Repo Rate, defaulting to 7.0%: {e}")
     return 7.0
+
 
