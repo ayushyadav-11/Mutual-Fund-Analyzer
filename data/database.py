@@ -254,6 +254,10 @@ def initialize_database():
             cursor.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN IF NOT EXISTS {col} TEXT")
             conn.commit()
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             pass
     
     # Fund Risk
@@ -280,9 +284,16 @@ def initialize_database():
     # Graceful migration for cat_avg columns added after initial schema
     for col in ["cat_avg_sharpe", "cat_avg_sortino", "cat_avg_beta", "cat_avg_std_dev", "cat_avg_alpha"]:
         try:
-            cursor.execute(f"ALTER TABLE fund_risk ADD COLUMN {col} REAL")
+            if USE_POSTGRES:
+                cursor.execute(f"ALTER TABLE fund_risk ADD COLUMN IF NOT EXISTS {col} REAL")
+            else:
+                cursor.execute(f"ALTER TABLE fund_risk ADD COLUMN {col} REAL")
             conn.commit()
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             pass
 
 
