@@ -48,12 +48,16 @@
 
       <div class="grid">
         <!-- Send Invites -->
-        <div class="card" style="padding:24px;">
+        <div class="card" style="padding:24px; position: relative; z-index: 50;">
           <h3>Add Family Member</h3>
           <p style="font-size:0.85rem;color:var(--text-muted);margin-top:5px;">Send an invite to their username.</p>
-          <div class="invite-box">
-            <input type="text" id="invite-username" placeholder="Enter username..." />
+          <style>
+            .search-item:hover { background: rgba(99,102,241,0.25); color: #fff; }
+          </style>
+          <div class="invite-box" style="position: relative;">
+            <input type="text" id="invite-username" placeholder="Search family member..." oninput="searchUsers(this.value)" autocomplete="off" />
             <button onclick="sendInvite()">Invite</button>
+            <div id="search-results" style="position: absolute; top: 100%; left: 0; right: 80px; background: rgba(17, 24, 39, 0.98); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; display: none; z-index: 100; max-height: 200px; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.8); backdrop-filter: blur(10px);"></div>
           </div>
         </div>
 
@@ -79,8 +83,8 @@
   <div class="toast" id="toast"></div>
 
   <script>
-    const API = 'https://mutual-fund-analyzer-z48c.onrender.com';
-    const getApiUrl = () => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? window.location.origin : API;
+    const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? window.location.origin : 'https://mutual-fund-analyzer-z48c.onrender.com';
+    const getApiUrl = () => API;
     
     function showToast(msg) {
       const toast = document.getElementById('toast');
@@ -101,6 +105,42 @@
       }
       return res.json();
     }
+
+    let searchTimeout;
+    async function searchUsers(query) {
+        const resultsDiv = document.getElementById('search-results');
+        if (!query || query.length < 2) {
+            resultsDiv.style.display = 'none';
+            return;
+        }
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(async () => {
+            try {
+                const res = await apiFetch(`/api/family/search?q=${encodeURIComponent(query)}`);
+                if (res && res.length > 0) {
+                    resultsDiv.innerHTML = res.map(u => `<div class="search-item" style="padding: 10px 15px; cursor: pointer; border-bottom: 1px solid var(--border);" onclick="selectUser('${u.username.replace(/'/g, "\\'")}')">${u.username}</div>`).join('');
+                    resultsDiv.style.display = 'block';
+                } else {
+                    resultsDiv.innerHTML = `<div style="padding: 10px 15px; color: var(--text-muted);">No users found</div>`;
+                    resultsDiv.style.display = 'block';
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }, 300);
+    }
+
+    function selectUser(name) {
+        document.getElementById('invite-username').value = name;
+        document.getElementById('search-results').style.display = 'none';
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.invite-box')) {
+            const resultsDiv = document.getElementById('search-results');
+            if(resultsDiv) resultsDiv.style.display = 'none';
+        }
+    });
 
     async function sendInvite() {
         const username = document.getElementById('invite-username').value.trim();

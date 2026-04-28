@@ -327,13 +327,24 @@ def compute_risk_metrics(holdings: list) -> dict:
 
     holdings: list of holding dicts from parser.py
     """
-    from scrapers.morningstar import get_rbi_repo_rate
+    from scrapers.morningstar import get_rbi_repo_rate as _async_rbi_rate
+    import asyncio as _asyncio
+
+    # get_rbi_repo_rate is async — run it safely from this sync context
+    try:
+        loop = _asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                rfr_annual = _pool.submit(_asyncio.run, _async_rbi_rate()).result() / 100.0
+        else:
+            rfr_annual = loop.run_until_complete(_async_rbi_rate()) / 100.0
+    except Exception:
+        rfr_annual = 0.07  # fallback: 7%
+    rfr_monthly = (1 + rfr_annual) ** (1 / 12) - 1
+
     results = {}
     all_fund_returns = []
-
-    # Dynamically fetch RBI India Policy Repo Rate for exact math
-    rfr_annual = get_rbi_repo_rate() / 100.0
-    rfr_monthly = (1 + rfr_annual) ** (1 / 12) - 1
 
     # Date range: 3 years back
     end_date = date.today().strftime("%Y-%m-%d")
@@ -398,6 +409,27 @@ def compute_risk_metrics(holdings: list) -> dict:
             "data_points": len(fund_returns) if fund_returns is not None else 0,
             "note": "Beta not applicable for debt/liquid funds" if not benchmark_ticker else None,
         }
+
+        # ── Inject category averages from DB (Morningstar/Moneycontrol scrape) ──
+        try:
+            from data.database import get_connection
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute('SELECT alpha, cat_avg_sharpe, cat_avg_sortino, cat_avg_beta, cat_avg_std_dev, cat_avg_alpha FROM fund_risk WHERE isin = ?', (isin,))
+            db_risk = c.fetchone()
+            if db_risk:
+                fund_metrics.update({
+                    "alpha": db_risk["alpha"],
+                    "cat_avg_sharpe": db_risk["cat_avg_sharpe"],
+                    "cat_avg_sortino": db_risk["cat_avg_sortino"],
+                    "cat_avg_beta": db_risk["cat_avg_beta"],
+                    "cat_avg_std_dev": db_risk["cat_avg_std_dev"],
+                    "cat_avg_alpha": db_risk["cat_avg_alpha"]
+                })
+            conn.close()
+        except Exception as e:
+            import logging
+            logging.getLogger().warning(f"Failed to fetch cat avg for {isin}: {e}")
 
         # Attach interpretation ratings
         interp = _interpret_metrics(fund_metrics, category)

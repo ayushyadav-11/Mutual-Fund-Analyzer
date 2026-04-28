@@ -17,7 +17,7 @@ import httpx
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request, BackgroundTasks
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -63,6 +63,42 @@ def startup_event():
             logger.error(f"Failed to initialize database: {e}")
     t = threading.Thread(target=_init, daemon=True)
     t.start()
+
+# ── Serve frontend HTML pages ─────────────────────────────────────────────────
+_FRONTEND_DIR = Path(__file__).parent / "frontend"
+
+async def _html(filename: str) -> FileResponse:
+    return FileResponse(str(_FRONTEND_DIR / filename))
+
+# Clean URLs (/dashboard) AND legacy .html URLs (/dashboard.html) both work
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+async def serve_index():
+    return await _html("index.html")
+
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/dashboard.html", include_in_schema=False)
+async def serve_dashboard():
+    return await _html("dashboard.html")
+
+@app.get("/family", include_in_schema=False)
+@app.get("/family.html", include_in_schema=False)
+async def serve_family():
+    return await _html("family.html")
+
+@app.get("/reset-password", include_in_schema=False)
+@app.get("/reset-password.html", include_in_schema=False)
+async def serve_reset_password():
+    return await _html("reset-password.html")
+
+# Serve CSS and any other static frontend assets at the root level
+@app.get("/style.css", include_in_schema=False)
+async def serve_css():
+    return FileResponse(str(_FRONTEND_DIR / "style.css"), media_type="text/css")
+
+# Mount full frontend dir for any other static assets
+app.mount("/frontend", StaticFiles(directory=str(_FRONTEND_DIR)), name="frontend")
+
 
 # Allow frontend to call API
 app.add_middleware(
@@ -130,9 +166,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Unauthenticated endpoints
         if request.method == "OPTIONS" or request.url.path in [
-            "/", "/favicon.ico", "/dashboard.html", "/family.html",
-            "/reset-password.html", "/api/config"
-        ]:
+            "/", "/health", "/favicon.ico",
+            "/style.css",
+            "/index.html", "/dashboard.html", "/family.html", "/reset-password.html",
+            "/dashboard", "/family", "/reset-password",
+            "/api/config",
+        ] or request.url.path.startswith("/frontend/"):
             return await call_next(request)
         if request.url.path.startswith("/api/"):
             auth_header = request.headers.get("Authorization")
@@ -398,10 +437,188 @@ def get_summary(request: Request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Background prefetch: silently warms Redis for all holding ISINs on dashboard load
+# ─────────────────────────────────────────────────────────────────────────────
+# isin -> asyncio.Event: set when prefetch completes, so foreground requests can wait instead of duplicate-scraping
+_prefetch_events: dict[str, asyncio.Event] = {}
+
+async def _prefetch_one_fund(isin: str, scheme_name: str, scheme: dict):
+    """Scrape one fund and store full response in Redis + Supabase. Skipped if already cached."""
+    from data.cache import get_cached, set_cached
+    from data.database import get_cached_fund_deep_dive, cache_fund_deep_dive, insert_or_update_scheme
+    from scrapers.moneycontrol import MoneyControlScraper
+    from scrapers.morningstar import MorningstarScraper
+
+    redis_key = f"fund_detail:{isin}"
+
+    # Already in Redis? Nothing to do.
+    if get_cached(redis_key):
+        return
+
+    # Already in Supabase deep-dive cache? Build minimal response and push to Redis.
+    cached = get_cached_fund_deep_dive(isin, max_age_hours=24)
+    if cached:
+        logger.info("Prefetch: Supabase hit for %s, warming Redis", isin)
+        _mini = {
+            "isin": isin,
+            "name": scheme_name,
+            "category": scheme.get("category", ""),
+            "benchmark": scheme.get("benchmark", ""),
+            "fundamentals": cached.get("fundamentals", {}),
+            "risk": cached.get("risk", {}),
+            "returns": cached.get("returns", {}),
+            "fund_trailing": cached.get("returns", {}),
+            "benchmark_cagr": cached.get("benchmark_cagr", {}),
+            "holdings": cached.get("holdings", []),
+            "sector_allocation": cached.get("sectors", []),
+            "aum_cr": cached.get("fundamentals", {}).get("aum_cr"),
+            "expense_ratio": cached.get("fundamentals", {}).get("expense_ratio"),
+            "exit_load": cached.get("fundamentals", {}).get("exit_load"),
+            "portfolio_turnover": cached.get("fundamentals", {}).get("portfolio_turnover"),
+            "current_nav": None, "nav_date": None,
+            "performance_annualised": [], "performance_yearly": [], "performance_sip": [],
+            "sip_vs_benchmark": None, "xirr": None,
+        }
+        set_cached(redis_key, _mini, 3600)
+        return
+
+    # Live scrape as last resort
+    logger.info("Prefetch: live scraping %s (%s)", isin, scheme_name)
+    try:
+        # Use ONE shared Morningstar client for all MS calls — avoids double token refresh
+        async with MoneyControlScraper() as mc, MorningstarScraper() as ms:
+            ms_fund, mc_risk, mc_perf, mc_fund, mc_overview = await asyncio.gather(
+                ms.search_fund(scheme_name),
+                mc.get_risk_metrics(isin),
+                mc.get_performance(isin),
+                mc.get_fundamentals(isin),
+                mc.get_overview(isin),
+            )
+        if mc_overview:
+            mc_fund = {**mc_overview, **(mc_fund or {})}
+
+        returns_data, benchmark_returns = _mc_extract_period_returns(mc_perf)
+        risk_data = _mc_extract_risk(mc_risk, scheme.get("benchmark", ""))
+        mc_fundamentals = _mc_extract_fundamentals(mc_fund)
+
+        fundms = {
+            "aum_cr": mc_fundamentals.get("aum_cr"),
+            "expense_ratio": mc_fundamentals.get("expense_ratio"),
+            "exit_load": mc_fundamentals.get("exit_load"),
+            "portfolio_turnover": mc_fundamentals.get("portfolio_turnover"),
+            "pe": mc_fundamentals.get("pe"), "cat_avg_pe": mc_fundamentals.get("cat_avg_pe"),
+            "pb": mc_fundamentals.get("pb"), "cat_avg_pb": mc_fundamentals.get("cat_avg_pb"),
+            "price_sale": mc_fundamentals.get("price_sale"),
+            "cat_avg_price_sale": mc_fundamentals.get("cat_avg_price_sale"),
+            "price_cash_flow": mc_fundamentals.get("price_cash_flow"),
+            "cat_avg_price_cash_flow": mc_fundamentals.get("cat_avg_price_cash_flow"),
+            "dividend_yield": mc_fundamentals.get("dividend_yield"),
+            "cat_avg_dividend_yield": mc_fundamentals.get("cat_avg_dividend_yield"),
+            "roe": mc_fundamentals.get("roe"), "cat_avg_roe": mc_fundamentals.get("cat_avg_roe"),
+        }
+
+        holdings_list, sector_allocation = [], []
+        if ms_fund:
+            try:
+                # Reuse the SAME ms scraper instance — token already loaded, no second refresh
+                async with MorningstarScraper() as ms_portfolio:
+                    raw_portfolio, fund_info = await asyncio.gather(
+                        ms_portfolio.get_portfolio(ms_fund["id"]),
+                        ms_portfolio.get_fund_info(ms_fund["id"]),
+                    )
+                holdings_list = [
+                    {"asset": k, "weight": round(v * 100, 2)}
+                    for k, v in sorted(raw_portfolio.items(), key=lambda x: x[1], reverse=True)
+                ][:20]
+                sector_allocation = fund_info.get("sector_allocation", [])
+                if not mc_fundamentals.get("aum_cr"):
+                    fundms["aum_cr"] = fund_info.get("aum_cr")
+                if not mc_fundamentals.get("expense_ratio"):
+                    fundms["expense_ratio"] = fund_info.get("expense_ratio")
+            except Exception as _e:
+                logger.debug("Prefetch MS portfolio failed for %s: %s", isin, _e)
+
+        await asyncio.get_event_loop().run_in_executor(
+            None, insert_or_update_scheme, isin, scheme_name
+        )
+        cache_fund_deep_dive(
+            isin=isin, fundamentals=fundms, risk=risk_data,
+            returns=returns_data, bench_returns=benchmark_returns,
+            holdings=holdings_list, sectors=sector_allocation,
+        )
+
+        payload = {
+            "isin": isin, "name": scheme_name,
+            "category": scheme.get("category", ""),
+            "benchmark": scheme.get("benchmark", ""),
+            "fundamentals": fundms, "risk": risk_data,
+            "returns": returns_data, "fund_trailing": returns_data,
+            "benchmark_cagr": benchmark_returns,
+            "holdings": holdings_list, "sector_allocation": sector_allocation,
+            "aum_cr": fundms.get("aum_cr"),
+            "expense_ratio": fundms.get("expense_ratio"),
+            "exit_load": fundms.get("exit_load"),
+            "portfolio_turnover": fundms.get("portfolio_turnover"),
+            "current_nav": mc_overview.get("latest_nav") if mc_overview else None,
+            "nav_date": mc_overview.get("nav_date") if mc_overview else None,
+            "performance_annualised": [], "performance_yearly": [], "performance_sip": [],
+            "sip_vs_benchmark": None, "xirr": None,
+        }
+        set_cached(redis_key, payload, 3600)
+        logger.info("Prefetch: cached %s in Redis+Supabase", isin)
+    except Exception as e:
+        logger.warning("Prefetch failed for %s: %s", isin, e)
+
+
+async def _background_prefetch_holdings(holdings: list):
+    """Prefetch all holding ISINs in the background with max 3 concurrent scrapes."""
+    from data.database import get_connection
+    sem = asyncio.Semaphore(2)  # max 2 concurrent background scrapes — leaves bandwidth for foreground
+
+    # Resolve scheme info for all ISINs in one query
+    isins = [h["isin"] for h in holdings if h.get("isin")]
+    if not isins:
+        return
+
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        placeholders = ", ".join(["%s"] * len(isins))
+        c.execute(
+            f"SELECT isin, scheme_name, category, benchmark FROM schemes WHERE isin IN ({placeholders})",
+            isins,
+        )
+        rows = {r["isin"]: r for r in c.fetchall()}
+        conn.close()
+    except Exception as e:
+        logger.warning("Prefetch: scheme lookup failed: %s", e)
+        return
+
+    async def _fetch_with_sem(isin, holding):
+        if isin in _prefetch_events:  # already being fetched
+            return
+        scheme = rows.get(isin)
+        if not scheme:
+            return
+        ev = asyncio.Event()
+        _prefetch_events[isin] = ev
+        try:
+            async with sem:
+                await _prefetch_one_fund(isin, scheme["scheme_name"], dict(scheme))
+        finally:
+            ev.set()                       # unblock any foreground waiter
+            _prefetch_events.pop(isin, None)
+
+    tasks = [_fetch_with_sem(h["isin"], h) for h in holdings if h.get("isin")]
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info("Background prefetch complete for %d ISINs", len(tasks))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /api/holdings
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/holdings")
-def get_holdings(request: Request):
+async def get_holdings(request: Request, background_tasks: BackgroundTasks):
     data = _load_or_404(request.state.user_id)
     result = []
     for h in data["holdings"]:
@@ -449,6 +666,11 @@ def get_holdings(request: Request):
         })
 
     result.sort(key=lambda x: x["current_value"], reverse=True)
+
+    # Fire-and-forget: pre-warm Redis for all holdings in background
+    # so fund modals are instant by the time the user clicks one
+    background_tasks.add_task(_background_prefetch_holdings, data["holdings"])
+
     return result
 
 
@@ -831,18 +1053,74 @@ async def get_dividends(request: Request):
 # GET /api/fund/{isin} Deep-Dive Integration
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/fund/{isin}")
-async def get_fund_details(request: Request, isin: str):
+async def get_fund_details(request: Request, isin: str, refresh: bool = False):
     """Return fund details using Moneycontrol for metrics and Morningstar for portfolio composition."""
     from data.database import get_nav_series, DB_PATH, get_cached_fund_deep_dive, cache_fund_deep_dive, get_connection
+    from data.cache import get_cached, set_cached, delete_cached
 
-    # ── 1. Base Scheme from DB ─────────────────────────────────────────────────
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT scheme_name, category, benchmark, scheme_code FROM schemes WHERE isin = ?", (isin,))
-    scheme = c.fetchone()
-    conn.close()
+    # ── 0. Redis full-response cache (TTL: 1 hour) ─────────────────────────────
+    _redis_key = f"fund_detail:{isin}"
 
-    # Preserve CAS-based XIRR for this individual holding.
+    if refresh:
+        # Hard refresh: delete Redis + Supabase cache so live scrape runs
+        logger.info("Force refresh requested for %s — busting caches", isin)
+        await asyncio.get_event_loop().run_in_executor(None, delete_cached, _redis_key)
+        await asyncio.get_event_loop().run_in_executor(
+            None, lambda: __import__('data.database', fromlist=['_delete_deep_dive_cache'])._delete_deep_dive_cache(isin)
+            if hasattr(__import__('data.database', fromlist=['_delete_deep_dive_cache']), '_delete_deep_dive_cache')
+            else None
+        )
+    elif not DEBUG_BYPASS_DEEP_DIVE_CACHE:
+        _redis_hit = await asyncio.get_event_loop().run_in_executor(None, get_cached, _redis_key)
+        if _redis_hit:
+            logger.info("Redis cache hit for %s", isin)
+            return _redis_hit
+
+    # ── 0b. If background prefetch is already running for this ISIN, wait for it ──
+    # This prevents a duplicate live scrape when the user clicks a fund that is
+    # currently being prefetched in the background.
+    if isin in _prefetch_events:
+        logger.info("Foreground waiting on background prefetch for %s", isin)
+        try:
+            await asyncio.wait_for(_prefetch_events[isin].wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("Prefetch wait timed out for %s, falling through to live scrape", isin)
+        # Check Redis again — prefetch should have populated it
+        _redis_hit = await asyncio.get_event_loop().run_in_executor(None, get_cached, _redis_key)
+        if _redis_hit:
+            logger.info("Redis hit after prefetch wait for %s", isin)
+            return _redis_hit
+
+    # ── 1. Fetch scheme + deep-dive cache + session data ALL IN PARALLEL ─────────
+    _scheme_key = f"scheme:{isin}"
+
+    def _fetch_scheme_from_db():
+        _s = get_cached(_scheme_key)
+        if _s:
+            return _s
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT scheme_name, category, benchmark, scheme_code FROM schemes WHERE isin = ?", (isin,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            d = dict(row)
+            set_cached(_scheme_key, d, 3600)
+            return d
+        return None
+
+    def _fetch_deep_dive():
+        if DEBUG_BYPASS_DEEP_DIVE_CACHE:
+            return None
+        return get_cached_fund_deep_dive(isin, max_age_hours=24)
+
+    loop = asyncio.get_event_loop()
+    scheme, cached_fund = await asyncio.gather(
+        loop.run_in_executor(None, _fetch_scheme_from_db),
+        loop.run_in_executor(None, _fetch_deep_dive),
+    )
+
+    # ── Resolve scheme (fallback to session data if not in DB) ───────────────
     holding_xirr = None
     active_holding = None
     try:
@@ -857,7 +1135,6 @@ async def get_fund_details(request: Request, isin: str):
 
     if not scheme:
         if active_holding:
-            # Fallback to session data if not in DB
             from core.parser import get_benchmark_ticker
             name = active_holding.get("name", "Unknown Fund")
             cat = active_holding.get("category", "")
@@ -865,17 +1142,16 @@ async def get_fund_details(request: Request, isin: str):
                 "scheme_name": name,
                 "category": cat,
                 "benchmark": get_benchmark_ticker(name, cat),
-                "scheme_code": None
+                "scheme_code": None,
             }
         else:
             raise HTTPException(status_code=404, detail="Fund ISIN not indexed in Database.")
 
     scheme_name = scheme["scheme_name"]
-    category = scheme["category"]
+    category    = scheme["category"]
     scheme_code = scheme["scheme_code"]
     benchmark_symbol = scheme["benchmark"]
 
-    # Map Yahoo Finance / MC ticker symbols to human-readable index names
     _TICKER_TO_NAME = {
         "^NSEI":         "Nifty 50",
         "^BSESN":        "BSE Sensex",
@@ -886,17 +1162,12 @@ async def get_fund_details(request: Request, isin: str):
         "^NSMIDCP":      "Nifty Midcap 150",
         "HDFCSML250.NS": "Nifty Smallcap 250",
         "NIFTYSMALLCAP250.NS": "Nifty Smallcap 250",
-        "CRSLDX": "Nifty 500",
+        "CRSLDX":        "Nifty 500",
         "NSMIDCP":       "Nifty Midcap 150",
         "^NIFTY_MID_SELECT": "Nifty Midcap Select",
     }
     readable_benchmark = _TICKER_TO_NAME.get(benchmark_symbol, benchmark_symbol)
 
-    # ── 2. Check SQLite Cache (1-Hour Expiration) ─────────────────────────────
-    # Debug toggle: keep the live path hot while we inspect fundamentals parsing.
-    # cached_fund = get_cached_fund_deep_dive(isin, max_age_hours=1)
-    cached_fund = None if DEBUG_BYPASS_DEEP_DIVE_CACHE else get_cached_fund_deep_dive(isin, max_age_hours=24)
-    
     if cached_fund:
         fallback_benchmark = cached_fund.get("risk", {}).get("benchmark_name") or scheme["benchmark"]
         risk_data = cached_fund.get("risk", {})
@@ -915,6 +1186,26 @@ async def get_fund_details(request: Request, isin: str):
             "nav_date": None,
         }
         portfolio_turnover = fundms.get("portfolio_turnover")
+
+        # Still fetch performance tables from MC — they're lightweight and MC-cached
+        # so they are fast even when serving from the DB cache. Without this, the
+        # Performance (Lumpsum / Yearly / SIP) tabs show "No data available" after
+        # a server restart clears the in-memory Redis cache.
+        from scrapers.moneycontrol import MoneyControlScraper
+        try:
+            async with MoneyControlScraper() as mc:
+                mc_perf, mc_perf_yearly, mc_perf_sip, mc_overview = await asyncio.gather(
+                    mc.get_performance(isin),
+                    mc.get_performance_yearly(isin),
+                    mc.get_performance_sip(isin),
+                    mc.get_overview(isin),
+                )
+            if mc_overview and mfapi_data["current_nav"] is None:
+                mfapi_data["current_nav"] = mc_overview.get("latest_nav")
+                mfapi_data["nav_date"] = mc_overview.get("nav_date")
+        except Exception as _perf_err:
+            logger.warning("Cached-path MC perf fetch failed for %s: %s", isin, _perf_err)
+            mc_perf = mc_perf_yearly = mc_perf_sip = mc_overview = None
 
     if not cached_fund:
         from scrapers.morningstar import MorningstarScraper
@@ -982,7 +1273,10 @@ async def get_fund_details(request: Request, isin: str):
                     {"asset": asset, "weight": round(weight * 100, 2)}
                     for asset, weight in sorted(raw_portfolio.items(), key=lambda item: item[1], reverse=True)
                 ][:20]
-                sector_allocation = fund_info.get("sector_allocation", []) or []
+                sector_allocation = [
+                    {"sector": s.get("sector"), "weight": s.get("pct", 0.0)}
+                    for s in (fund_info.get("sector_allocation", []) or [])
+                ]
                 if not DEBUG_DISABLE_FUNDAMENTALS_FALLBACK and mc_fundamentals["aum_cr"] is None:
                     mc_fundamentals["aum_cr"] = fund_info.get("aum_cr")
                 if not DEBUG_DISABLE_FUNDAMENTALS_FALLBACK and mc_fundamentals["expense_ratio"] is None:
@@ -1041,7 +1335,7 @@ async def get_fund_details(request: Request, isin: str):
 
 
     # Seed NAV from locally stored history so the UI does not go blank when live fetch fails.
-    navs = get_nav_series(isin)
+    navs = await asyncio.get_event_loop().run_in_executor(None, get_nav_series, isin)
     if navs:
         latest_nav = navs[-1]
         try:
@@ -1092,7 +1386,7 @@ async def get_fund_details(request: Request, isin: str):
         if resolved_scheme_code and resolved_scheme_code != scheme_code:
             scheme_code = resolved_scheme_code
             await asyncio.get_event_loop().run_in_executor(
-                None, _insert_or_update_scheme, isin, scheme_name, str(scheme_code)
+                None, _insert_or_update_scheme, isin, scheme_name, scheme.get("category"), scheme.get("benchmark"), str(scheme_code)
             )
 
         if scheme_code:
@@ -1259,7 +1553,7 @@ async def get_fund_details(request: Request, isin: str):
 
 
 
-    return {
+    response_payload = {
         "isin":               isin,
         "name":               scheme_name,
         "category":           category,
@@ -1276,18 +1570,22 @@ async def get_fund_details(request: Request, isin: str):
         "fund_trailing":      returns_data,
         "benchmark_cagr":     benchmark_returns,
         "performance_annualised": (
-            # Extract lumpsum.annualised from mc_perf (which is a list like [{lumpsum:{annualised:[...],...}},...])
             (mc_perf[0].get("lumpsum", {}).get("annualised", []) if isinstance(mc_perf, list) and mc_perf else [])
-            if not cached_fund else []
+            if mc_perf else []
         ),
-        "performance_yearly":     mc_perf_yearly if not cached_fund else [],
-        "performance_sip":        mc_perf_sip if not cached_fund else [],
-
+        "performance_yearly":     mc_perf_yearly if mc_perf_yearly else [],
+        "performance_sip":        mc_perf_sip if mc_perf_sip else [],
         "sector_allocation":  sector_allocation,
         "holdings":           sorted_holdings,
         "sip_vs_benchmark":   sip_chart,
         "xirr":               holding_xirr,
     }
+
+    # Cache the full response in Redis (1h TTL) — skip if user-specific fields present
+    if not DEBUG_BYPASS_DEEP_DIVE_CACHE:
+        await asyncio.get_event_loop().run_in_executor(None, set_cached, _redis_key, response_payload, 3600)
+
+    return response_payload
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/chat
@@ -1423,6 +1721,11 @@ if __name__ == "__main__":
 
 
 # ── Family Dashboard Routes ──────────────────────────────────────────────────
+@app.get("/api/family/search")
+async def search_family(request: Request, q: str = ""):
+    from data.database import search_users
+    return search_users(q)
+
 class FamilyInviteRequest(BaseModel):
     username: str
 
@@ -1466,21 +1769,33 @@ async def get_family_portfolios(request: Request):
             total_invested = 0.0
             current_value = 0.0
             for h in data.get("holdings", []):
-                curr_nav = h.get("live_nav")
+                curr_nav = h.get("live_nav") or h.get("nav")
+                h_txns = h.get("transactions")
+                if not h_txns:
+                    h_txns = [t for t in data.get("transactions", []) if t.get("scheme_name") == h.get("name")]
+                
                 if not curr_nav:
-                    navs = [(t["date"], t["nav"]) for t in h.get("transactions", []) if t.get("nav")]
+                    navs = [(t["date"], t["nav"]) for t in h_txns if t.get("nav")]
                     if navs:
                         navs.sort(key=lambda x: x[0], reverse=True)
                         curr_nav = navs[0][1]
+                
                 val = h.get("units", 0) * (curr_nav if curr_nav else 0.0)
                 current_value += val
                 
-                invested = sum(abs(t["amount"]) for t in h.get("transactions", []) if t["type"] in ("BUY", "SIP", "SWITCH_IN", "DIVR")) - sum(abs(t["amount"]) for t in h.get("transactions", []) if t["type"] in ("SELL", "SWITCH_OUT"))
+                invested = sum(abs(t["amount"]) for t in h_txns if t["type"] in ("BUY", "SIP", "SWITCH_IN", "DIVR")) - sum(abs(t["amount"]) for t in h_txns if t["type"] in ("SELL", "SWITCH_OUT"))
                 total_invested += invested
                 
+            investor_name = data.get("investor_info", {}).get("name")
+            fallback_name = investor_name if investor_name else "Unknown"
+            
+            db_username = user_info.get("username") if user_info else None
+            if db_username and db_username.startswith("auth_user_"):
+                db_username = None
+            
             portfolios.append({
                 "user_id": uid,
-                "username": user_info["username"] if user_info else "Unknown",
+                "username": db_username if db_username else fallback_name,
                 "total_invested": round(total_invested, 2),
                 "current_value": round(current_value, 2),
                 "xirr": data.get("portfolio_xirr")

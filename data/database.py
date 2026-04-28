@@ -19,19 +19,49 @@ if USE_POSTGRES:
     from psycopg2.extras import RealDictCursor
     from psycopg2.pool import ThreadedConnectionPool
     
-    # Initialize global pool
     _db_url = DATABASE_URL
     if "?" not in _db_url:
-        _db_url += "?sslmode=require"
-    elif "sslmode" not in _db_url:
-        _db_url += "&sslmode=require"
-        
-    try:
-        # min 1 connection, max 10 connections
-        _pg_pool = ThreadedConnectionPool(1, 10, _db_url)
-    except Exception as e:
-        logger.error(f"FATAL: psycopg2 failed to create ThreadedConnectionPool! Error: {str(e)}")
-        raise e
+        _db_url += "?sslmode=require&keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5"
+    else:
+        if "sslmode" not in _db_url:
+            _db_url += "&sslmode=require"
+        if "keepalives" not in _db_url:
+            _db_url += "&keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5"
+
+    _pg_pool = None  # Lazy: initialized on first use
+
+    def _get_pool() -> ThreadedConnectionPool:
+        """Return the global pool, creating it on first call (lazy init)."""
+        global _pg_pool
+        if _pg_pool is None:
+            try:
+                _pg_pool = ThreadedConnectionPool(1, 10, _db_url)
+                logger.info("Postgres connection pool created.")
+            except Exception as e:
+                logger.error("FATAL: Could not create ThreadedConnectionPool: %s", e)
+                raise
+        return _pg_pool
+
+    def _get_live_pg_conn():
+        """Get a healthy connection from the pool, discarding stale ones."""
+        pool = _get_pool()
+        for attempt in range(3):
+            conn = pool.getconn()
+            if conn.closed:
+                logger.warning("Discarding closed connection from pool (attempt %d)", attempt + 1)
+                pool.putconn(conn, close=True)
+                continue
+            try:
+                conn.rollback()  # reset transaction state + verify alive
+                return conn
+            except psycopg2.OperationalError:
+                logger.warning("Discarding stale connection (attempt %d)", attempt + 1)
+                try:
+                    pool.putconn(conn, close=True)
+                except Exception:
+                    pass
+        logger.warning("Pool exhausted healthy connections — opening direct connection")
+        return psycopg2.connect(_db_url)
 
 class AgnosticCursor:
     def __init__(self, cursor):
@@ -68,28 +98,43 @@ class AgnosticConnection:
     def __init__(self, conn, is_pooled=False):
         self.conn = conn
         self.is_pooled = is_pooled
+        self._had_error = False  # flag if this connection saw an OperationalError
         
     def cursor(self):
         c = self.conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else self.conn.cursor()
         return AgnosticCursor(c)
         
-    def commit(self): self.conn.commit()
-    def rollback(self): self.conn.rollback()
+    def commit(self):
+        try:
+            self.conn.commit()
+        except Exception:
+            self._had_error = True
+            raise
+
+    def rollback(self):
+        try:
+            self.conn.rollback()
+        except Exception:
+            self._had_error = True
+
     def close(self):
         if self.is_pooled and USE_POSTGRES:
-            _pg_pool.putconn(self.conn)
+            pool = _get_pool()
+            if self._had_error or self.conn.closed:
+                try:
+                    pool.putconn(self.conn, close=True)
+                except Exception:
+                    pass
+            else:
+                pool.putconn(self.conn)
         else:
             self.conn.close()
 
 def get_connection():
-    """Returns an agnostic connection instance wrapping SQLite or Postgres perfectly."""
+    """Returns an agnostic connection wrapping SQLite or a healthy Postgres connection."""
     if USE_POSTGRES:
-        try:
-            conn = _pg_pool.getconn()
-            return AgnosticConnection(conn, is_pooled=True)
-        except Exception as e:
-            logger.error(f"FATAL: psycopg2 failed to get connection from pool! Error: {str(e)}")
-            raise e
+        conn = _get_live_pg_conn()
+        return AgnosticConnection(conn, is_pooled=True)
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -195,11 +240,25 @@ def initialize_database():
             beta REAL,
             alpha REAL,
             max_drawdown_pct REAL,
+            cat_avg_sharpe REAL,
+            cat_avg_sortino REAL,
+            cat_avg_beta REAL,
+            cat_avg_std_dev REAL,
+            cat_avg_alpha REAL,
             last_updated_at TIMESTAMP,
             FOREIGN KEY (isin) REFERENCES schemes (isin) ON DELETE CASCADE
         )
     ''')
-    
+
+    # Graceful migration for cat_avg columns added after initial schema
+    for col in ["cat_avg_sharpe", "cat_avg_sortino", "cat_avg_beta", "cat_avg_std_dev", "cat_avg_alpha"]:
+        try:
+            cursor.execute(f"ALTER TABLE fund_risk ADD COLUMN {col} REAL")
+            conn.commit()
+        except Exception:
+            pass
+
+
     # Fund Performance (Returns over time)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fund_performance (
@@ -361,8 +420,10 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
         
         # 2. Risk
         c.execute('''
-            INSERT INTO fund_risk (isin, benchmark_name, volatility, sharpe, sortino, beta, alpha, max_drawdown_pct, last_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO fund_risk (isin, benchmark_name, volatility, sharpe, sortino, beta, alpha, max_drawdown_pct,
+                                   cat_avg_sharpe, cat_avg_sortino, cat_avg_beta, cat_avg_std_dev, cat_avg_alpha,
+                                   last_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(isin) DO UPDATE SET
                 benchmark_name=excluded.benchmark_name,
                 volatility=excluded.volatility,
@@ -371,8 +432,20 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
                 beta=excluded.beta,
                 alpha=excluded.alpha,
                 max_drawdown_pct=excluded.max_drawdown_pct,
+                cat_avg_sharpe=excluded.cat_avg_sharpe,
+                cat_avg_sortino=excluded.cat_avg_sortino,
+                cat_avg_beta=excluded.cat_avg_beta,
+                cat_avg_std_dev=excluded.cat_avg_std_dev,
+                cat_avg_alpha=excluded.cat_avg_alpha,
                 last_updated_at=excluded.last_updated_at
-        ''', (isin, risk.get("benchmark_name"), risk.get("volatility"), risk.get("sharpe"), risk.get("sortino"), risk.get("beta"), risk.get("alpha"), risk.get("max_drawdown_pct"), now))
+        ''', (
+            isin, risk.get("benchmark_name"), risk.get("volatility"),
+            risk.get("sharpe"), risk.get("sortino"), risk.get("beta"),
+            risk.get("alpha"), risk.get("max_drawdown_pct"),
+            risk.get("cat_avg_sharpe"), risk.get("cat_avg_sortino"),
+            risk.get("cat_avg_beta"), risk.get("cat_avg_std_dev"), risk.get("cat_avg_alpha"),
+            now
+        ))
         
         # 3. Performance
         for period, val in returns.items():
@@ -399,11 +472,12 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
         for s in sectors:
             # handle formats depending on how scrapers provide it
             sec_name = s.get("name") or s.get("sector")
-            sec_weight = s.get("value") or s.get("weight") or s.get("weight_pct")
+            sec_weight = s.get("value") or s.get("weight") or s.get("weight_pct") or s.get("pct")
             c.execute('''
                 INSERT INTO fund_sectors (isin, sector_name, weight_pct, last_updated_at)
                 VALUES (?, ?, ?, ?)
             ''', (isin, sec_name, sec_weight, now))
+
             
         conn.commit()
     except Exception as e:
@@ -530,6 +604,21 @@ def get_cached_fund_deep_dive(isin: str, max_age_hours=1) -> Optional[dict]:
     conn.close()
     return result
 
+
+def _delete_deep_dive_cache(isin: str):
+    """Delete all Supabase/SQLite cached deep-dive rows for an ISIN (used by force-refresh)."""
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        for table in ('fund_fundamentals', 'fund_risk', 'fund_performance', 'fund_holdings', 'fund_sectors'):
+            c.execute(f'DELETE FROM {table} WHERE isin = ?', (isin,))
+        conn.commit()
+        logger.info("Deleted deep-dive cache for %s from all tables", isin)
+    except Exception as e:
+        logger.warning("_delete_deep_dive_cache failed for %s: %s", isin, e)
+    finally:
+        conn.close()
+
 def mark_user_fund_cached(user_id: str, isin: str):
     """Records that a fund's deep-dive data has been pre-fetched for this user."""
     conn = get_connection()
@@ -634,10 +723,28 @@ def create_user(username: str, password_hash: str) -> str:
 def get_user_by_username(username: str) -> Optional[dict]:
     conn = get_connection()
     c = conn.cursor()
+    # Check users table first (legacy)
     c.execute('SELECT id, username, password_hash FROM users WHERE username = ?', (username,))
     row = c.fetchone()
+    if row:
+        conn.close()
+        return dict(row)
+    
+    # If not found, try to find a portfolio_session where investor_info.name matches partially
+    c.execute('SELECT id, session_data FROM portfolio_sessions')
+    for p_row in c.fetchall():
+        try:
+            import json
+            data = json.loads(p_row['session_data'])
+            name = data.get("investor_info", {}).get("name", "")
+            if name and username.lower() in name.lower():
+                conn.close()
+                return {"id": p_row['id'], "username": name, "password_hash": ""}
+        except:
+            pass
+            
     conn.close()
-    return dict(row) if row else None
+    return None
 
 def get_user_by_id(user_id: str) -> Optional[dict]:
     conn = get_connection()
@@ -652,6 +759,10 @@ def accept_family_invite(user_id_1: str, user_id_2: str):
     conn = get_connection()
     c = conn.cursor()
     try:
+        # Ensure users exist in public.users to satisfy foreign keys
+        c.execute('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING', (user_id_1, f'auth_user_{user_id_1}', '', now))
+        c.execute('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING', (user_id_2, f'auth_user_{user_id_2}', '', now))
+        
         # Check if pending inverse relationship exists
         c.execute('SELECT status FROM family_links WHERE user_id_1 = ? AND user_id_2 = ?', (user_id_2, user_id_1))
         row = c.fetchone()
@@ -683,6 +794,10 @@ def send_family_invite(from_user_id: str, to_user_id: str):
     conn = get_connection()
     c = conn.cursor()
     try:
+        # Ensure users exist in public.users to satisfy foreign keys
+        c.execute('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING', (from_user_id, f'auth_user_{from_user_id}', '', now))
+        c.execute('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING', (to_user_id, f'auth_user_{to_user_id}', '', now))
+        
         c.execute('''
             INSERT INTO family_links (user_id_1, user_id_2, status, last_updated_at)
             VALUES (?, ?, ?, ?)
@@ -704,14 +819,58 @@ def get_pending_invites(user_id: str) -> List[dict]:
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT u.id, u.username 
-        FROM family_links f
-        JOIN users u ON f.user_id_1 = u.id
-        WHERE f.user_id_2 = ? AND f.status = 'pending'
+        SELECT user_id_1
+        FROM family_links
+        WHERE user_id_2 = ? AND status = 'pending'
     ''', (user_id,))
     rows = c.fetchall()
+    
+    results = []
+    for row in rows:
+        uid = row['user_id_1']
+        # Try users table first
+        c.execute('SELECT username FROM users WHERE id = ?', (uid,))
+        u_row = c.fetchone()
+        name = u_row['username'] if u_row else None
+        
+        # Fallback to portfolio session
+        if not name:
+            c.execute('SELECT session_data FROM portfolio_sessions WHERE id = ?', (uid,))
+            p_row = c.fetchone()
+            if p_row:
+                try:
+                    import json
+                    data = json.loads(p_row['session_data'])
+                    name = data.get("investor_info", {}).get("name")
+                except:
+                    pass
+        
+        results.append({"id": uid, "username": name or "Unknown"})
+        
     conn.close()
-    return [{"id": row['id'], "username": row['username']} for row in rows]
+    return results
+
+def search_users(query: str) -> List[dict]:
+    if not query or len(query) < 2:
+        return []
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT id, session_data FROM portfolio_sessions')
+    results = []
+    seen = set()
+    for p_row in c.fetchall():
+        try:
+            import json
+            data = json.loads(p_row['session_data'])
+            name = data.get("investor_info", {}).get("name", "")
+            if name and query.lower() in name.lower():
+                if name not in seen:
+                    seen.add(name)
+                    results.append({"id": p_row['id'], "username": name})
+        except:
+            pass
+    conn.close()
+    return results
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

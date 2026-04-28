@@ -220,15 +220,16 @@
                 </div>
 
                 <div class="risk-grid fade-in" id="portfolio-risk-cards">
+                    <!-- Volatility -->
                     <div class="card risk-metric-card">
                         <div class="metric-label">Volatility</div>
                         <div class="metric-val text-warning" id="r-volatility">—</div>
                         <div class="metric-sub">Annualised std dev</div>
                         <div class="risk-gauge">
-                            <div class="risk-gauge-fill" id="g-volatility" style="background:var(--warning);width:0%">
-                            </div>
+                            <div class="risk-gauge-fill" id="g-volatility" style="background:var(--warning);width:0%"></div>
                         </div>
                     </div>
+                    <!-- Sharpe -->
                     <div class="card risk-metric-card">
                         <div class="metric-label">Sharpe Ratio</div>
                         <div class="metric-val" id="r-sharpe">—</div>
@@ -237,6 +238,7 @@
                             <div class="risk-gauge-fill" id="g-sharpe" style="background:var(--success);width:0%"></div>
                         </div>
                     </div>
+                    <!-- Sortino -->
                     <div class="card risk-metric-card">
                         <div class="metric-label">Sortino Ratio</div>
                         <div class="metric-val" id="r-sortino">—</div>
@@ -245,15 +247,16 @@
                             <div class="risk-gauge-fill" id="g-sortino" style="background:var(--accent);width:0%"></div>
                         </div>
                     </div>
+                    <!-- Max Drawdown -->
                     <div class="card risk-metric-card">
                         <div class="metric-label">Max Drawdown</div>
                         <div class="metric-val text-danger" id="r-drawdown">—</div>
                         <div class="metric-sub">Worst peak-to-trough</div>
                         <div class="risk-gauge">
-                            <div class="risk-gauge-fill" id="g-drawdown" style="background:var(--danger);width:0%">
-                            </div>
+                            <div class="risk-gauge-fill" id="g-drawdown" style="background:var(--danger);width:0%"></div>
                         </div>
                     </div>
+                    <!-- Beta -->
                     <div class="card risk-metric-card">
                         <div class="metric-label">Beta vs Nifty 50</div>
                         <div class="metric-val text-info" id="r-beta">—</div>
@@ -264,25 +267,24 @@
                     </div>
                 </div>
 
-                <!-- Per-fund risk table -->
                 <div class="card fade-in" style="padding:24px;margin-top:20px;">
                     <div class="section-header">
                         <div class="section-title">Per-Fund Risk Analysis</div>
-                        <span style="font-size:0.78rem;color:var(--text-muted);">Beta uses sector-specific benchmark per
-                            fund category</span>
+                        <span style="font-size:0.78rem;color:var(--text-muted);">▲/▼ vs category avg &nbsp;·&nbsp; Beta uses sector-specific benchmark per fund</span>
                     </div>
                     <div class="table-wrap">
                         <table class="risk-fund-table" id="risk-fund-table">
                             <thead>
                                 <tr>
-                                    <th>Fund</th>
+                                    <th style="min-width:200px;">Fund</th>
                                     <th>Category</th>
-                                    <th>Beta Benchmark</th>
-                                    <th>Beta <span class="th-badge">Defensive/Neutral/Aggressive</span></th>
-                                    <th>Volatility % <span class="th-badge">Low/Moderate/High</span></th>
-                                    <th>Sharpe <span class="th-badge">Excellent→Poor</span></th>
-                                    <th>Sortino <span class="th-badge">Excellent→Poor</span></th>
-                                    <th>Max DD% <span class="th-badge">Mild/Moderate/Severe</span></th>
+                                    <th>Benchmark</th>
+                                    <th>Beta <span class="th-badge">Fund / Cat Avg</span></th>
+                                    <th>Volatility% <span class="th-badge">Fund / Cat Avg</span></th>
+                                    <th>Sharpe <span class="th-badge">Fund / Cat Avg</span></th>
+                                    <th>Sortino <span class="th-badge">Fund / Cat Avg</span></th>
+                                    <th>Alpha <span class="th-badge">Fund / Cat Avg</span></th>
+                                    <th>Max DD%</th>
                                     <th>Peer Rank</th>
                                 </tr>
                             </thead>
@@ -785,8 +787,21 @@
             <!-- ① Header -->
             <button class="modal-close" id="fund-modal-close" onclick="closeFundModal()">✕</button>
             <div style="margin-bottom:18px;">
-                <h2 id="fm-name" style="font-size:1.4rem;font-weight:800;color:#fff;line-height:1.3;margin-bottom:8px;">
-                    —</h2>
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+                    <h2 id="fm-name" style="font-size:1.4rem;font-weight:800;color:#fff;line-height:1.3;margin-bottom:8px;flex:1;">—</h2>
+                    <button id="fm-refresh-btn"
+                        onclick="refreshFundModal()"
+                        title="Force refresh — bust cache and re-fetch latest data"
+                        style="flex-shrink:0;display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;
+                               border:1px solid var(--border);background:rgba(99,102,241,0.12);color:var(--accent);
+                               font-size:0.78rem;font-weight:600;cursor:pointer;transition:all 0.2s;
+                               margin-top:2px;"
+                        onmouseover="this.style.background='rgba(99,102,241,0.25)'"
+                        onmouseout="this.style.background='rgba(99,102,241,0.12)'">
+                        <span id="fm-refresh-icon" style="display:inline-block;transition:transform 0.5s;">↻</span>
+                        <span id="fm-refresh-label">Refresh</span>
+                    </button>
+                </div>
                 <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px;">
                     <span class="badge" id="fm-category">—</span>
                     <span class="badge" style="background:#1e3a5f;" id="fm-benchmark">—</span>
@@ -859,22 +874,27 @@
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Sharpe Ratio</div>
                     <div class="fmp-val" id="fm-sharpe" style="color:var(--accent);">—</div>
+                    <div class="fmp-cat" id="fm-cat-sharpe" style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;">Cat: —</div>
                 </div>
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Sortino Ratio</div>
                     <div class="fmp-val" id="fm-sortino" style="color:var(--info);">—</div>
+                    <div class="fmp-cat" id="fm-cat-sortino" style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;">Cat: —</div>
                 </div>
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Beta</div>
                     <div class="fmp-val" id="fm-beta" style="color:var(--warning);">—</div>
+                    <div class="fmp-cat" id="fm-cat-beta" style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;">Cat: —</div>
                 </div>
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Alpha (%)</div>
                     <div class="fmp-val" id="fm-alpha" style="color:var(--success);">—</div>
+                    <div class="fmp-cat" id="fm-cat-alpha" style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;">Cat: —</div>
                 </div>
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Std Deviation</div>
                     <div class="fmp-val" id="fm-stddev" style="color:var(--warning);">—</div>
+                    <div class="fmp-cat" id="fm-cat-stddev" style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;">Cat: —</div>
                 </div>
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Max Drawdown</div>
@@ -883,6 +903,7 @@
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Volatility</div>
                     <div class="fmp-val" id="fm-volatility" style="color:var(--warning);">—</div>
+
                 </div>
                 <div class="fm-metric-pill">
                     <div class="fmp-label">Benchmark</div>
@@ -1040,7 +1061,7 @@
 
     <script>
         // ── Globals ──────────────────────────────────────────────────────────────────
-        const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? window.location.origin : 'https://mutual-fund-analyzer-z48c.onrender.com';
+        const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? window.location.origin : 'https://mutual-fund-analyzer-z48c.onrender.com';
         let allTransactions = [];
         let allHoldings = [];
         let allocChart = null;
@@ -1290,7 +1311,7 @@
 
         // ── Risk ──────────────────────────────────────────────────────────────────────
         async function loadRisk() {
-            el('risk-fund-body').innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⏳</div><p>Fetching benchmark data from NSE…</p></div></td></tr>';
+            el('risk-fund-body').innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">⏳</div><p>Fetching risk metrics…</p></div></td></tr>';
             try {
                 const d = await apiFetch('/api/risk');
                 const port = d.portfolio || {};
@@ -1305,40 +1326,50 @@
                 // Per-fund table
                 const fundsData = Object.entries(d.per_fund || {});
                 if (!fundsData.length) {
-                    el('risk-fund-body').innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">📭</div><p>No fund data available</p></div></td></tr>';
+                    el('risk-fund-body').innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="icon">📭</div><p>No fund data available</p></div></td></tr>';
                     return;
                 }
 
+                // Helper: render a "Fund / Cat Avg" comparison cell
+                // higherIsBetter=true → fund > cat is green; false → fund < cat is green
+                function catAvgCell(fund, cat, higherIsBetter = true, suffix = '', decimals = 2) {
+                    if (fund == null) return '<span style="color:var(--text-muted)">—</span>';
+                    const fmtF = (+fund).toFixed(decimals) + suffix;
+                    if (cat == null) return `<span style="font-weight:700">${fmtF}</span>`;
+                    const delta = fund - cat;
+                    const beating = higherIsBetter ? delta > 0 : delta < 0;
+                    const deltaColor = beating ? 'var(--success)' : 'var(--danger)';
+                    const arrow = beating ? '▲' : '▼';
+                    const fmtC = (+cat).toFixed(decimals) + suffix;
+                    const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(2) + suffix;
+                    return `<div style="font-weight:700">${fmtF}</div>
+                            <div style="font-size:0.73rem;color:var(--text-muted)">Cat: ${fmtC}</div>
+                            <div style="font-size:0.73rem;color:${deltaColor};font-weight:600">${arrow} ${deltaStr}</div>`;
+                }
+
                 el('risk-fund-body').innerHTML = fundsData.map(([isin, f]) => {
-                    const betaColor = f.beta == null ? '' : (Math.abs(f.beta) > 1.2 ? 'text-danger' : Math.abs(f.beta) < 0.8 ? 'text-success' : 'text-info');
-                    const sharpColor = f.sharpe_ratio == null ? '' : (f.sharpe_ratio >= 1 ? 'text-success' : f.sharpe_ratio >= 0 ? 'text-warning' : 'text-danger');
-                    const volColor = f.volatility_pct == null ? '' : (f.volatility_pct > 25 ? 'text-danger' : f.volatility_pct > 15 ? 'text-warning' : 'text-success');
                     const ddColor = f.max_drawdown_pct == null ? '' : (Math.abs(f.max_drawdown_pct) > 30 ? 'text-danger' : 'text-warning');
-                    const betaBadge = ratingBadge(f.beta_rating, 'beta');
-                    const volBadge = ratingBadge(f.volatility_rating, 'vol');
-                    const sharpBadge = ratingBadge(f.sharpe_rating, 'sharpe');
-                    const sortBadge = ratingBadge(f.sortino_rating, 'sharpe');
-                    const ddBadge = ratingBadge(f.drawdown_rating, 'dd');
                     const peerBadge = f.peer_rank ? `<span class="peer-rank-badge">${f.peer_rank}</span>` : '—';
                     const interpretNote = f.interpretation_note ? `<div class="interp-note">${f.interpretation_note}</div>` : '';
                     return `<tr onclick="openFundModal('${isin}')" style="cursor:pointer;" title="Click for Deep Dive Details" class="clickable-row">
         <td class="fund-name-cell">
-          <div class="name" style="color:var(--accent-light); text-decoration:underline; text-underline-offset:3px;">${f.name}</div>
+          <div class="name" style="color:var(--accent-light);text-decoration:underline;text-underline-offset:3px;">${f.name}</div>
           ${interpretNote}
         </td>
         <td style="color:var(--text-secondary);font-size:0.8rem;">${f.category || '—'}</td>
-        <td style="color:var(--text-muted);font-size:0.8rem;">${f.beta_benchmark || (f.note ? '<span style="opacity:.5">N/A – Debt</span>' : '—')}</td>
-        <td class="num ${betaColor}">${f.beta != null ? f.beta + '<br>' + betaBadge : '—'}</td>
-        <td class="num ${volColor}">${f.volatility_pct != null ? f.volatility_pct + '%<br>' + volBadge : '—'}</td>
-        <td class="num ${sharpColor}">${f.sharpe_ratio != null ? f.sharpe_ratio + '<br>' + sharpBadge : '—'}</td>
-        <td class="num">${f.sortino_ratio != null ? f.sortino_ratio + '<br>' + sortBadge : '—'}</td>
-        <td class="num ${ddColor}">${f.max_drawdown_pct != null ? f.max_drawdown_pct + '%<br>' + ddBadge : '—'}</td>
+        <td style="color:var(--text-muted);font-size:0.78rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${f.beta_benchmark || ''}">${f.beta_benchmark || (f.note ? '<span style="opacity:.5">N/A – Debt</span>' : '—')}</td>
+        <td class="num">${catAvgCell(f.beta, f.cat_avg_beta, false)}</td>
+        <td class="num">${catAvgCell(f.volatility_pct, f.cat_avg_std_dev, false, '%')}</td>
+        <td class="num">${catAvgCell(f.sharpe_ratio, f.cat_avg_sharpe, true)}</td>
+        <td class="num">${catAvgCell(f.sortino_ratio, f.cat_avg_sortino, true)}</td>
+        <td class="num">${catAvgCell(f.alpha, f.cat_avg_alpha, true)}</td>
+        <td class="num ${ddColor}">${f.max_drawdown_pct != null ? f.max_drawdown_pct + '%' : '—'}</td>
         <td>${peerBadge}</td>
       </tr>`;
                 }).join('');
 
             } catch (e) {
-                el('risk-fund-body').innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>${e.message}</p></div></td></tr>`;
+                el('risk-fund-body').innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="icon">⚠️</div><p>${e.message}</p></div></td></tr>`;
             }
         }
 
@@ -1974,8 +2005,11 @@
         // ── Fund Details Modal ────────────────────────────────────────────────────────
         let _sipChart = null;
 
-        async function openFundModal(isin) {
+        let _currentFundIsin = null;  // track which fund is open
+
+        async function openFundModal(isin, forceRefresh = false) {
             if (!isin) return;
+            _currentFundIsin = isin;
             const modal = el('fund-modal');
             modal.style.display = 'flex';
 
@@ -1995,7 +2029,23 @@
             if (_sipChart) { _sipChart.destroy(); _sipChart = null; }
 
             try {
-                const d = await apiFetch(`/api/fund/${isin}`);
+                // Animate the refresh icon while loading
+                const refreshIcon = el('fm-refresh-icon');
+                const refreshBtn = el('fm-refresh-btn');
+                const refreshLabel = el('fm-refresh-label');
+                if (refreshBtn) refreshBtn.disabled = true;
+                if (refreshIcon) {
+                    refreshIcon.style.transition = 'transform 1s linear';
+                    const spin = () => {
+                        refreshIcon.style.transform = `rotate(${Date.now() / 3 % 360}deg)`;
+                        if (refreshBtn && refreshBtn.disabled) requestAnimationFrame(spin);
+                    };
+                    requestAnimationFrame(spin);
+                }
+                if (refreshLabel) refreshLabel.textContent = forceRefresh ? 'Refreshing…' : 'Loading…';
+
+                const url = forceRefresh ? `/api/fund/${isin}?refresh=true` : `/api/fund/${isin}`;
+                const d = await apiFetch(url);
 
                 // ── ① Header ──
                 el('fm-name').textContent = d.name || '—';
@@ -2026,10 +2076,20 @@
                 const fmtR = (v, suffix = '') => v != null ? `${(+v).toFixed(2)}${suffix}` : 'N/A';
                 const r = d.risk || {};
                 el('fm-sharpe').textContent = fmtR(r.sharpe);
+                if (el('fm-cat-sharpe')) el('fm-cat-sharpe').textContent = 'Cat: ' + fmtR(r.cat_avg_sharpe);
+                
                 el('fm-sortino').textContent = fmtR(r.sortino);
+                if (el('fm-cat-sortino')) el('fm-cat-sortino').textContent = 'Cat: ' + fmtR(r.cat_avg_sortino);
+                
                 el('fm-beta').textContent = fmtR(r.beta);
+                if (el('fm-cat-beta')) el('fm-cat-beta').textContent = 'Cat: ' + fmtR(r.cat_avg_beta);
+                
                 el('fm-alpha').textContent = fmtR(r.alpha, '%');
+                if (el('fm-cat-alpha')) el('fm-cat-alpha').textContent = 'Cat: ' + fmtR(r.cat_avg_alpha, '%');
+                
                 el('fm-stddev').textContent = fmtR(r.volatility, '%');
+                if (el('fm-cat-stddev')) el('fm-cat-stddev').textContent = 'Cat: ' + fmtR(r.cat_avg_std_dev, '%');
+                
                 el('fm-drawdown').textContent = r.max_drawdown_pct != null ? `${(+r.max_drawdown_pct).toFixed(2)}%` : 'N/A';
                 el('fm-volatility').textContent = fmtR(r.volatility, '%');
                 el('fm-bench-label').textContent = r.benchmark_name || d.benchmark || '—';
@@ -2192,6 +2252,14 @@
             } catch (e) {
                 el('fm-name').textContent = 'Error loading fund details';
                 console.error(e);
+            } finally {
+                // Re-enable refresh button
+                const refreshBtn = el('fm-refresh-btn');
+                const refreshLabel = el('fm-refresh-label');
+                const refreshIcon = el('fm-refresh-icon');
+                if (refreshBtn) refreshBtn.disabled = false;
+                if (refreshLabel) refreshLabel.textContent = 'Refresh';
+                if (refreshIcon) refreshIcon.style.transform = 'rotate(0deg)';
             }
         }
 
@@ -2210,6 +2278,11 @@
 
         function closeFundModal() {
             el('fund-modal').style.display = 'none';
+            _currentFundIsin = null;
+        }
+
+        function refreshFundModal() {
+            if (_currentFundIsin) openFundModal(_currentFundIsin, true);
         }
 
 

@@ -1,18 +1,42 @@
 import httpx
 import re
+import time
 from bs4 import BeautifulSoup
 import logging
 from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 
+# ── Global token cache ────────────────────────────────────────────────────────
+# Morningstar JWT tokens last ~1 hour. Cache it process-wide so every new
+# MorningstarScraper instance reuses it instead of paying the 2-4s refresh cost.
+_GLOBAL_MS_TOKEN: Optional[str] = None
+_GLOBAL_MS_TOKEN_TS: float = 0.0
+_MS_TOKEN_TTL: float = 55 * 60  # 55 minutes
+
+def _get_cached_token() -> Optional[str]:
+    if _GLOBAL_MS_TOKEN and (time.monotonic() - _GLOBAL_MS_TOKEN_TS) < _MS_TOKEN_TTL:
+        return _GLOBAL_MS_TOKEN
+    return None
+
+def _save_token(token: str):
+    global _GLOBAL_MS_TOKEN, _GLOBAL_MS_TOKEN_TS
+    _GLOBAL_MS_TOKEN = token
+    _GLOBAL_MS_TOKEN_TS = time.monotonic()
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 class MorningstarScraper:
     def __init__(self, client: Optional[httpx.AsyncClient] = None):
-        self.token = None
+        # Seed from global cache — avoids token refresh on first API call
+        cached = _get_cached_token()
+        self.token = cached
         self.headers = {'User-Agent': 'Mozilla/5.0'}
+        if cached:
+            self.headers['Authorization'] = f'Bearer {cached}'
         self._client = client
         self._owns_client = False
-        
+
     async def __aenter__(self):
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=15.0, follow_redirects=True)
@@ -22,7 +46,7 @@ class MorningstarScraper:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self._owns_client and self._client:
             await self._client.aclose()
-        
+
     async def _refresh_token(self):
         url = 'https://www.morningstar.in/mutualfunds/f00000pzh2/fund/detailed-portfolio.aspx'
         try:
@@ -31,13 +55,15 @@ class MorningstarScraper:
             else:
                 async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                     r = await client.get(url, headers=self.headers)
-                    
+
             tokens = re.findall(r'(eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)', r.text)
             if tokens:
                 self.token = max(tokens, key=len)
                 self.headers['Authorization'] = f'Bearer {self.token}'
+                _save_token(self.token)  # persist globally for next scraper instance
                 return True
-        except: pass
+        except:
+            pass
         return False
 
     async def search_fund(self, query: str) -> Optional[Dict[str, str]]:
@@ -46,11 +72,11 @@ class MorningstarScraper:
         clean = re.sub(r'(?i)\b(fund|direct|regular|growth|dividend|plan|option|idcw|reinvestment|payout|cumulative)\b', '', query)
         clean = re.sub(r'[^a-zA-Z0-9 ]', ' ', clean)
         clean = re.sub(r'\s+', ' ', clean).strip()
-        
+
         # Also remove 'Direct' or 'Regular' if they are stuck to words without space
         clean = re.sub(r'(?i)(direct|regular|growth)', '', clean)
         clean = re.sub(r'\s+', ' ', clean).strip()
-        
+
         url = f'https://www.morningstar.in/handlers/autocompletehandler.ashx?criteria={clean}'
         try:
             if self._client:
@@ -58,19 +84,22 @@ class MorningstarScraper:
             else:
                 async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                     r = await client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-                    
+
             soup = BeautifulSoup(r.text, 'html.parser')
             for table in soup.find_all('table'):
                 t_type = table.find('type')
                 if t_type and t_type.text == 'Fund':
                     m = table.find('id')
                     d = table.find('description')
-                    if m and d: return {'id': m.text, 'name': d.text}
-        except: pass
+                    if m and d:
+                        return {'id': m.text, 'name': d.text}
+        except:
+            pass
         return None
 
     async def get_portfolio(self, mstar_id: str) -> Dict[str, float]:
-        if not self.token and not await self._refresh_token(): return {}
+        if not self.token and not await self._refresh_token():
+            return {}
         url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/holding/v2/{mstar_id}/data?locale=en&clientId=RSIN_SAL'
         try:
             if self._client:
@@ -78,7 +107,7 @@ class MorningstarScraper:
             else:
                 async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                     r = await client.get(url, headers=self.headers)
-                    
+
             if r.status_code == 200:
                 data = r.json()
                 holdings = {}
@@ -97,94 +126,118 @@ class MorningstarScraper:
 
     async def get_benchmark(self, mstar_id: str) -> Optional[str]:
         """Extracts the exact Native Benchmark (e.g. 'Nifty 500 TR INR') from the Portfolio Schema."""
-        if not self.token and not await self._refresh_token(): return None
-        url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/holding/v2/{mstar_id}/data?locale=en&clientId=RSIN_SAL'
+        if not self.token and not await self._refresh_token():
+            return None
+        url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/v2/{mstar_id}/data?locale=en&clientId=RSIN_SAL'
         try:
             if self._client:
                 r = await self._client.get(url, headers=self.headers)
             else:
                 async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                     r = await client.get(url, headers=self.headers)
-                    
+
             if r.status_code == 200:
                 data = r.json()
-                bm = data.get('holdingActiveShare', {}).get('primaryProspectusBenchmark')
-                return bm
+                port = data.get("portfolio", {})
+                return port.get("prospectusNetExpenseRatio") or port.get("name")
         except Exception as e:
             logger.error(f"Benchmark fetch failed for {mstar_id}: {e}")
         return None
 
-    async def get_fund_info(self, mstar_id: str) -> Dict:
-        """
-        Fetch sector allocation, AUM, expense ratio, and turnover from Morningstar.
-        Returns a dict with: sector_allocation, portfolio_turnover_pct, aum_cr, expense_ratio
-        """
+    async def get_sector_allocation(self, mstar_id: str) -> list:
+        """Fetch sector allocation from the correct Morningstar sector endpoint."""
+        if not self.token and not await self._refresh_token():
+            return []
+        url = (
+            f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/v2/sector'
+            f'/{mstar_id}/data?locale=en&clientId=RSIN_SAL&benchmarkId=mstarorcat'
+            f'&version=4.81.0&secId={mstar_id}'
+        )
+        _SECTOR_LABELS = {
+            "basicMaterials": "Basic Materials",
+            "consumerCyclical": "Consumer Cyclical",
+            "financialServices": "Financial Services",
+            "realEstate": "Real Estate",
+            "communicationServices": "Communication Services",
+            "energy": "Energy",
+            "industrials": "Industrials",
+            "technology": "Technology",
+            "consumerDefensive": "Consumer Defensive",
+            "healthcare": "Healthcare",
+            "utilities": "Utilities",
+        }
+        try:
+            if self._client:
+                r = await self._client.get(url, headers=self.headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    r = await client.get(url, headers=self.headers)
+            if r.status_code == 200 and r.content:
+                data = r.json()
+                eq = data.get("EQUITY", {})
+                fund_port = eq.get("fundPortfolio", {})
+                alloc_list = []
+                for key, label in _SECTOR_LABELS.items():
+                    val = fund_port.get(key)
+                    if val is not None:
+                        try:
+                            pct = round(float(val), 2)
+                            if pct > 0:
+                                alloc_list.append({"sector": label, "pct": pct})
+                        except Exception:
+                            pass
+                return sorted(alloc_list, key=lambda x: x["pct"], reverse=True)
+        except Exception as e:
+            logger.error(f"Sector allocation fetch failed for {mstar_id}: {e}")
+        return []
+
+    async def get_fund_info(self, mstar_id: str) -> dict:
+        """Fetch AUM, expense ratio, and sector allocation from Morningstar."""
         if not self.token and not await self._refresh_token():
             return {}
-        
-        info = {
-            'sector_allocation': [],
-            'portfolio_turnover_pct': None,
-            'aum_cr': None,
-            'expense_ratio': None
-        }
-        
+        # Snapshot v2 endpoint for AUM/expense/turnover
+        url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/snapshot/v2/{mstar_id}/data?locale=en&clientId=RSIN_SAL'
+        result = {}
         try:
-            # 1. Quote endpoint for AUM, Expense Ratio, and Turnover
-            q_url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/quote/v2/{mstar_id}/data?clientId=RSIN_SAL'
             if self._client:
-                r_q = await self._client.get(q_url, headers=self.headers)
+                r = await self._client.get(url, headers=self.headers)
             else:
                 async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                    r_q = await client.get(q_url, headers=self.headers)
-                    
-            if r_q.status_code == 200:
-                q_data = r_q.json()
-                
-                exp = q_data.get('expense')
-                if exp is not None:
-                    info['expense_ratio'] = round(float(exp) * 100, 2)
-                    
-                turnover = q_data.get('lastTurnoverRatio')
-                if turnover is not None:
-                    info['portfolio_turnover_pct'] = round(float(turnover) * 100, 2)
-                    
-                aum = q_data.get('tNAInShareClassCurrency')
-                if aum is not None:
-                    # Convert to Crores (1 Crore = 10,000,000)
-                    info['aum_cr'] = round(float(aum) / 10000000.0, 2)
-
-            # 2. Sector endpoint for Equity Sector Breakdown
-            s_url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/portfolio/v2/sector/{mstar_id}/data?clientId=RSIN_SAL'
-            if self._client:
-                r_s = await self._client.get(s_url, headers=self.headers)
-            else:
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                    r_s = await client.get(s_url, headers=self.headers)
-                    
-            if r_s.status_code == 200:
-                s_data = r_s.json()
-                eq_portfolio = s_data.get('EQUITY', {}).get('fundPortfolio', {})
-                
-                # Format CamelCase sector names to properly spaced titles (e.g. financialServices -> Financial Services)
-                def fmt_sector(s):
-                    return ''.join(' ' + c if c.isupper() else c for c in s).title().strip()
-                
-                sectors = []
-                for k, v in eq_portfolio.items():
-                    if k not in ('portfolioDate', 'masterPortfolioId') and v is not None and float(v) > 0:
-                        sectors.append({'sector': fmt_sector(k), 'weight': round(float(v), 2)})
-                
-                info['sector_allocation'] = sorted(sectors, key=lambda x: x['weight'], reverse=True)
-
+                    r = await client.get(url, headers=self.headers)
+            if r.status_code == 200 and r.content:
+                data = r.json()
+                aum_raw = data.get("fundAttributes", {}).get("totalNetAsset")
+                if aum_raw:
+                    try:
+                        result["aum_cr"] = round(float(aum_raw) / 1e7, 2)
+                    except Exception:
+                        pass
+                er = data.get("managementExpenseRatio") or data.get("expenseRatio")
+                if er:
+                    try:
+                        result["expense_ratio"] = round(float(er), 4)
+                    except Exception:
+                        pass
+                pt = data.get("portfolioTurnoverRatio") or data.get("portfolioTurnoverPercentage")
+                if pt:
+                    try:
+                        result["portfolio_turnover_pct"] = round(float(pt), 2)
+                    except Exception:
+                        pass
         except Exception as e:
-            logger.error(f"Fund info fetch failed for {mstar_id}: {e}")
-            
-        return info
+            logger.error(f"Fund snapshot fetch failed for {mstar_id}: {e}")
+
+        # Always fetch sector allocation from the dedicated sector endpoint
+        sector_alloc = await self.get_sector_allocation(mstar_id)
+        if sector_alloc:
+            result["sector_allocation"] = sector_alloc
+
+        return result
+
 
 async def get_rbi_repo_rate() -> float:
     """
-    Dynamically scrape the RBI's official Policy Repo Rate to act as the exact base 
+    Dynamically scrape the RBI's official Policy Repo Rate to act as the exact base
     for the 91-Day T-Bill Risk-Free Rate calculations.
     Returns the annualised rate percentage (e.g., 6.50). Returns 7.0 as fallback.
     """
@@ -206,5 +259,3 @@ async def get_rbi_repo_rate() -> float:
     except Exception as e:
         logger.warning(f"Failed to fetch dynamic RBI Repo Rate, defaulting to 7.0%: {e}")
     return 7.0
-
-

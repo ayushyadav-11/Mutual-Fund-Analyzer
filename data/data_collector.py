@@ -188,6 +188,7 @@ async def prefetch_deep_dive_for_user(user_id: str, holdings: list):
 
                 if ms_fund:
                     try:
+                        ms_id = ms_fund["id"]
                         async with MorningstarScraper() as ms:
                             raw_portfolio, fund_info = await asyncio.gather(
                                 ms.get_portfolio(ms_id),

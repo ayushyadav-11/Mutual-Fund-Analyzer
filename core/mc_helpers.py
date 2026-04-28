@@ -105,6 +105,16 @@ def _mc_extract_metric_value(payload: Any, *keys: str) -> Optional[float]:
             return numeric
     return None
 
+def _mc_extract_cat_avg(payload: Any, *keys: str) -> Optional[float]:
+    node = _mc_find_first(payload, *keys)
+    if isinstance(node, dict):
+        for p in ["3y", "5y", "1y", "10y", "3yr", "5yr", "1yr", "10yr"]:
+            for prefix in ["cat_avg_", "category_avg_", "catavg"]:
+                val = _mc_to_float(node.get(f"{prefix}{p}"))
+                if val is not None:
+                    return val
+    return None
+
 def _mc_extract_period_returns(payload: Any) -> tuple[dict, dict]:
     """Extract fund and benchmark/category returns from varied Moneycontrol shapes."""
     fund = {"1Y": None, "3Y": None, "5Y": None, "10Y": None}
@@ -174,19 +184,32 @@ def _mc_extract_period_returns(payload: Any) -> tuple[dict, dict]:
 
 def _mc_extract_risk(mc_risk: Any, fallback_benchmark: Optional[str]) -> dict:
     return {
-        "sharpe": _mc_extract_metric_value(mc_risk, "sharpe_ratio", "sharpe", "sharpe ratio"),
-        "sortino": _mc_extract_metric_value(mc_risk, "sortino_ratio", "sortino", "sortino ratio"),
-        "volatility": _mc_extract_metric_value(
+        "sharpe":          _mc_extract_metric_value(mc_risk, "sharpe_ratio", "sharpe", "sharpe ratio"),
+        "sortino":         _mc_extract_metric_value(mc_risk, "sortino_ratio", "sortino", "sortino ratio"),
+        "volatility":      _mc_extract_metric_value(
             mc_risk, "risk_std_dev", "std_dev", "standard_deviation", "standard deviation",
             "std deviation", "volatility"
         ),
-        "beta": _mc_extract_metric_value(mc_risk, "beta"),
-        "alpha": _mc_extract_metric_value(mc_risk, "alpha", "jensens_alpha", "jensen alpha", "jension alpha"),
+        "beta":            _mc_extract_metric_value(mc_risk, "beta"),
+        "alpha":           _mc_extract_metric_value(mc_risk, "alpha", "jensens_alpha", "jensen alpha", "jension alpha"),
         "max_drawdown_pct": _mc_extract_metric_value(
             mc_risk, "max_drawdown_pct", "max_drawdown", "drawdown", "max drawdown"
         ),
-        "benchmark_name": _mc_find_first(mc_risk, "benchmark_name", "benchmark", "benchmarklabel") or fallback_benchmark,
+        "benchmark_name":  _mc_find_first(mc_risk, "benchmark_name", "benchmark", "benchmarklabel") or fallback_benchmark,
+        # ── Category averages (from MoneyControl risk-metrics + overview) ──────────
+        "cat_avg_sharpe":    _mc_extract_cat_avg(mc_risk, "sharpe_ratio", "sharpe", "sharpe ratio") or _mc_extract_metric_value(mc_risk, "cat_avg_sharpe", "category_avg_sharpe", "catAvgSharpe",
+                                                       "category_sharpe", "cat_sharpe", "catSharpe"),
+        "cat_avg_sortino":   _mc_extract_cat_avg(mc_risk, "sortino_ratio", "sortino", "sortino ratio") or _mc_extract_metric_value(mc_risk, "cat_avg_sortino", "category_avg_sortino", "catAvgSortino",
+                                                       "category_sortino", "cat_sortino", "catSortino"),
+        "cat_avg_beta":      _mc_extract_cat_avg(mc_risk, "beta") or _mc_extract_metric_value(mc_risk, "cat_avg_beta", "category_avg_beta", "catAvgBeta",
+                                                       "category_beta", "cat_beta", "catBeta"),
+        "cat_avg_std_dev":   _mc_extract_cat_avg(mc_risk, "risk_std_dev", "std_dev", "standard_deviation", "standard deviation", "std deviation", "volatility") or _mc_extract_metric_value(mc_risk, "cat_avg_std_dev", "category_avg_std_dev",
+                                                       "catAvgStdDev", "category_std_dev", "cat_std_dev",
+                                                       "catAvgVolatility", "category_volatility"),
+        "cat_avg_alpha":     _mc_extract_cat_avg(mc_risk, "alpha", "jensens_alpha", "jensen alpha", "jension alpha") or _mc_extract_metric_value(mc_risk, "cat_avg_alpha", "category_avg_alpha", "catAvgAlpha",
+                                                       "category_alpha", "cat_alpha"),
     }
+
 
 def _mc_extract_fundamentals(mc_fund: Any) -> dict:
     return {

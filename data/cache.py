@@ -26,14 +26,26 @@ except Exception as e:
 
 
 def get_cached(key: str) -> dict | None:
-    """Retrieve string payload from cache and parse back to dict."""
+    """Retrieve payload from L1 memory cache or L2 database/Redis cache."""
+    # L1: Fast In-Memory Cache
+    if key in _memory_cache:
+        data, expires_at = _memory_cache[key]
+        if expires_at is None or expires_at > time.time():
+            return data
+        else:
+            _memory_cache.pop(key, None)
+
     try:
+        # L2: Redis Cache
         if _USE_REDIS and _redis_client:
             val = _redis_client.get(key)
             if val:
-                return json.loads(val)
+                data = json.loads(val)
+                # Populate L1 cache for next time
+                _memory_cache[key] = (data, time.time() + 86400)
+                return data
         else:
-            # Fallback to Database Cache (PostgreSQL/SQLite)
+            # L2: Database Cache (PostgreSQL/SQLite)
             from data.database import get_connection
             conn = get_connection()
             c = conn.cursor()
@@ -44,14 +56,18 @@ def get_cached(key: str) -> dict | None:
             if row:
                 expires_at = row['expires_at']
                 if expires_at is not None and expires_at <= time.time():
-                    # Delete stale cache natively in the background thread (optional, but cleaner)
+                    # Delete stale cache natively
                     conn = get_connection()
                     c = conn.cursor()
                     c.execute('DELETE FROM kv_cache WHERE key = ?', (key,))
                     conn.commit()
                     conn.close()
                     return None
-                return json.loads(row['value_json'])
+                
+                data = json.loads(row['value_json'])
+                # Populate L1 cache for next time
+                _memory_cache[key] = (data, expires_at if expires_at else time.time() + 86400)
+                return data
             
             return None
     except Exception as e:
@@ -60,8 +76,11 @@ def get_cached(key: str) -> dict | None:
 
 
 def set_cached(key: str, data: dict, ttl_seconds: int = 86400):
-    """Store dict payload as string in cache with TTL (default 24h)."""
+    """Store dict payload as string in L2 cache with TTL, and populate L1 memory cache."""
     try:
+        # Populate L1 Memory Cache immediately
+        _memory_cache[key] = (data, time.time() + ttl_seconds)
+        
         val = json.dumps(data)
         if _USE_REDIS and _redis_client:
             _redis_client.setex(key, ttl_seconds, val)
@@ -95,7 +114,39 @@ def flush_cache():
             pass
     else:
         _memory_cache.clear()
-        logger.info("Memory cache flushed.")
+        try:
+            from data.database import get_connection
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute('DELETE FROM kv_cache')
+            conn.commit()
+            conn.close()
+            logger.info("Database kv_cache flushed.")
+        except Exception as e:
+            logger.error("Failed to flush database kv_cache: %s", e)
+
+
+def delete_cached(key: str):
+    """Delete a single key from Redis or database cache."""
+    if _USE_REDIS and _redis_client:
+        try:
+            _redis_client.delete(key)
+            logger.info("Deleted Redis key: %s", key)
+        except Exception as e:
+            logger.warning("Redis DELETE error for key %s: %s", key, e)
+    else:
+        _memory_cache.pop(key, None)
+        try:
+            from data.database import get_connection
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute('DELETE FROM kv_cache WHERE key = ?', (key,))
+            conn.commit()
+            conn.close()
+            logger.info("Deleted Database cache key: %s", key)
+        except Exception as e:
+            logger.warning("Database cache DELETE error for key %s: %s", key, e)
+
 
 def is_redis_active() -> bool:
     return _USE_REDIS

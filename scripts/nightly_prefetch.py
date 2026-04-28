@@ -143,18 +143,15 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
     logger.info(f"[START] [{isin}] {name}")
 
     try:
-        ms = MorningstarScraper()
-        mc = MoneyControlScraper()
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        async with MorningstarScraper() as ms, MoneyControlScraper() as mc:
             ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
-                loop.run_in_executor(pool, ms.search_fund, name),
-                loop.run_in_executor(pool, mc.get_risk_metrics, isin),
-                loop.run_in_executor(pool, mc.get_performance, isin),
-                loop.run_in_executor(pool, mc.get_performance_yearly, isin),
-                loop.run_in_executor(pool, mc.get_performance_sip, isin),
-                loop.run_in_executor(pool, mc.get_fundamentals, isin),
-                loop.run_in_executor(pool, mc.get_overview, isin),
+                ms.search_fund(name),
+                mc.get_risk_metrics(isin),
+                mc.get_performance(isin),
+                mc.get_performance_yearly(isin),
+                mc.get_performance_sip(isin),
+                mc.get_fundamentals(isin),
+                mc.get_overview(isin),
             )
 
         if mc_overview:
@@ -184,10 +181,11 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
         if ms_fund:
             try:
                 ms_id = ms_fund["id"]
-                raw_portfolio, fund_info = await asyncio.gather(
-                    loop.run_in_executor(None, ms.get_portfolio, ms_id),
-                    loop.run_in_executor(None, ms.get_fund_info, ms_id),
-                )
+                async with MorningstarScraper() as ms_inner:
+                    raw_portfolio, fund_info = await asyncio.gather(
+                        ms_inner.get_portfolio(ms_id),
+                        ms_inner.get_fund_info(ms_id),
+                    )
                 sorted_holdings = [
                     {"asset": asset, "weight": round(weight * 100, 2)}
                     for asset, weight in sorted(raw_portfolio.items(), key=lambda x: x[1], reverse=True)
