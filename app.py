@@ -342,7 +342,13 @@ async def parse_pdf(
     # Fire-and-forget: pre-fetch deep-dive data for all holdings in the background
     # so the first Risk tab click is instant instead of waiting 10-20s per fund
     user_id = request.state.user_id
-    asyncio.create_task(prefetch_deep_dive_for_user(user_id, data.get("holdings", [])))
+    
+    # Track these ISINs in the database for the nightly global prefetch
+    from data.database import sync_user_holdings_to_tracker
+    holdings_list = data.get("holdings", [])
+    sync_user_holdings_to_tracker(user_id, holdings_list)
+    
+    asyncio.create_task(prefetch_deep_dive_for_user(user_id, holdings_list))
 
     return {
         "status": "ok",

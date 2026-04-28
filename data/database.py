@@ -362,9 +362,31 @@ def initialize_database():
         )
     ''')
 
+    # ── Dynamic Nightly Cache Tracker ──────────────────────────────────────────
+    # Tracks every ISIN held by at least one user so the nightly prefetch can
+    # warm caches for real user funds rather than a static hardcoded list.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tracked_isins (
+            isin         TEXT PRIMARY KEY,
+            scheme_name  TEXT,
+            holder_count INTEGER NOT NULL DEFAULT 1,
+            last_seen_at TIMESTAMP NOT NULL
+        )
+    ''')
+    # Per-user holdings map — needed to recompute holder_count on update/delete
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_fund_holdings (
+            user_id TEXT NOT NULL,
+            isin    TEXT NOT NULL,
+            added_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (user_id, isin)
+        )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("Successfully initialized the core SQLite database engine and normalized schema.")
+
 
 def insert_or_update_scheme(isin: str, scheme_name: str, scheme_code: Optional[str] = None, category: Optional[str] = None, benchmark: Optional[str] = None):
     """Upsert fund configuration matrices into the `schemes` table."""
@@ -909,6 +931,127 @@ def search_users(query: str) -> List[dict]:
             pass
     conn.close()
     return results
+
+def sync_user_holdings_to_tracker(user_id: str, holdings: List[Dict]):
+    """
+    Syncs the ISINs a user holds to the global tracker table.
+    Updates the holder count for each ISIN.
+    """
+    if not holdings:
+        return
+
+    conn = get_connection()
+    c = conn.cursor()
+    from datetime import datetime
+    now = datetime.now()
+
+    try:
+        # Get current ISINs for this user
+        if USE_POSTGRES:
+            c.execute("SELECT isin FROM user_fund_holdings WHERE user_id = %s", (user_id,))
+        else:
+            c.execute("SELECT isin FROM user_fund_holdings WHERE user_id = ?", (user_id,))
+        current_isins = {row['isin'] for row in c.fetchall()}
+
+        # Get new ISINs from the upload
+        new_isins = {h.get("isin") for h in holdings if h.get("isin")}
+        new_isin_names = {h.get("isin"): h.get("name") for h in holdings if h.get("isin")}
+
+        # Calculate diffs
+        added_isins = new_isins - current_isins
+        removed_isins = current_isins - new_isins
+
+        # Process additions
+        for isin in added_isins:
+            name = new_isin_names.get(isin, "")
+            if USE_POSTGRES:
+                c.execute('''
+                    INSERT INTO user_fund_holdings (user_id, isin, added_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT(user_id, isin) DO NOTHING
+                ''', (user_id, isin, now))
+                c.execute('''
+                    INSERT INTO tracked_isins (isin, scheme_name, holder_count, last_seen_at)
+                    VALUES (%s, %s, 1, %s)
+                    ON CONFLICT(isin) DO UPDATE SET
+                        holder_count = tracked_isins.holder_count + 1,
+                        scheme_name = EXCLUDED.scheme_name,
+                        last_seen_at = EXCLUDED.last_seen_at
+                ''', (isin, name, now))
+            else:
+                c.execute('''
+                    INSERT INTO user_fund_holdings (user_id, isin, added_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id, isin) DO NOTHING
+                ''', (user_id, isin, now))
+                c.execute('''
+                    INSERT INTO tracked_isins (isin, scheme_name, holder_count, last_seen_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(isin) DO UPDATE SET
+                        holder_count = tracked_isins.holder_count + 1,
+                        scheme_name = excluded.scheme_name,
+                        last_seen_at = excluded.last_seen_at
+                ''', (isin, name, now))
+
+        # Process removals
+        for isin in removed_isins:
+            if USE_POSTGRES:
+                c.execute("DELETE FROM user_fund_holdings WHERE user_id = %s AND isin = %s", (user_id, isin))
+                c.execute('''
+                    UPDATE tracked_isins 
+                    SET holder_count = GREATEST(0, holder_count - 1)
+                    WHERE isin = %s
+                ''', (isin,))
+            else:
+                c.execute("DELETE FROM user_fund_holdings WHERE user_id = ? AND isin = ?", (user_id, isin))
+                c.execute('''
+                    UPDATE tracked_isins 
+                    SET holder_count = MAX(0, holder_count - 1)
+                    WHERE isin = ?
+                ''', (isin,))
+                
+        # Optional Cleanup: remove ISINs with 0 holders
+        if USE_POSTGRES:
+            c.execute("DELETE FROM tracked_isins WHERE holder_count <= 0")
+        else:
+            c.execute("DELETE FROM tracked_isins WHERE holder_count <= 0")
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Failed to sync user holdings to tracker for user {user_id}: {e}")
+    finally:
+        conn.close()
+
+def get_top_tracked_isins(limit: int = 100) -> List[Dict]:
+    """
+    Returns the top tracked ISINs by holder count.
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    
+    try:
+        if USE_POSTGRES:
+            c.execute('''
+                SELECT isin, scheme_name, holder_count 
+                FROM tracked_isins 
+                ORDER BY holder_count DESC 
+                LIMIT %s
+            ''', (limit,))
+        else:
+            c.execute('''
+                SELECT isin, scheme_name, holder_count 
+                FROM tracked_isins 
+                ORDER BY holder_count DESC 
+                LIMIT ?
+            ''', (limit,))
+            
+        return [dict(row) for row in c.fetchall()]
+    except Exception as e:
+        logger.error(f"Failed to get tracked ISINs: {e}")
+        return []
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

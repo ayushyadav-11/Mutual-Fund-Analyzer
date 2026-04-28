@@ -229,7 +229,24 @@ async def main():
     loop = asyncio.get_event_loop()
 
     ok = fail = skip = 0
-    total = len(POPULAR_ISINS)
+    from data.database import get_top_tracked_isins
+    
+    # Get up to 100 most popular ISINs from the live database (user portfolios)
+    tracked = get_top_tracked_isins(100)
+    target_isins = [(row['isin'], row['scheme_name']) for row in tracked]
+    
+    # If we have less than 100 tracked from users, supplement with the hardcoded popular list
+    if len(target_isins) < 100:
+        seen = {isin for isin, _ in target_isins}
+        for isin, name in POPULAR_ISINS:
+            if len(target_isins) >= 100:
+                break
+            if isin not in seen:
+                target_isins.append((isin, name))
+                seen.add(isin)
+
+    total = len(target_isins)
+    logger.info(f"Nightly prefetch targeting {total} funds ({len(tracked)} from live tracker, remainder from hardcoded defaults).")
 
     async def _guarded(isin, name):
         nonlocal ok, fail, skip
@@ -242,7 +259,7 @@ async def main():
             # Polite delay between funds so we don't get rate-limited
             await asyncio.sleep(2)
 
-    tasks = [_guarded(isin, name) for isin, name in POPULAR_ISINS]
+    tasks = [_guarded(isin, name) for isin, name in target_isins]
     await asyncio.gather(*tasks)
 
     logger.info(f"Nightly prefetch complete — OK: {ok}, FAILED: {fail}, SKIPPED: {skip} / {total} total")
