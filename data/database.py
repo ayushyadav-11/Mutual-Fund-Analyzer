@@ -191,8 +191,35 @@ def initialize_database():
         )
     ''')
     
-    # Optimize sequential chronological reads for risk calculations
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_nav_history_date ON nav_history(nav_date)')
+    # Optimize sequential chronological reads for risk calculations.
+    # Use a separate try/except + zero timeout so a slow CREATE INDEX on
+    # a large nav_history table never aborts the rest of initialization.
+    try:
+        if USE_POSTGRES:
+            # Disable statement timeout just for this DDL (restored after)
+            cursor.execute("SET statement_timeout = 0")
+            conn.commit()
+            # Check if the index already exists to avoid re-building it
+            cursor.execute(
+                "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_nav_history_date'"
+            )
+            if not cursor.fetchone():
+                cursor.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_nav_history_date ON nav_history(nav_date)'
+                )
+                conn.commit()
+            # Restore a sensible default timeout
+            cursor.execute("SET statement_timeout = '30s'")
+            conn.commit()
+        else:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_nav_history_date ON nav_history(nav_date)')
+    except Exception as _idx_err:
+        logger.warning("nav_history index creation skipped (non-fatal): %s", _idx_err)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
     
     # --- Deep Dive Caching Tables ---
     
