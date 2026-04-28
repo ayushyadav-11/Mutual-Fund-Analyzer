@@ -27,7 +27,7 @@ from core.parser import parse_cas, save_session, load_session, recompute_xirr
 from core.risk import compute_risk_metrics
 from data.database import initialize_database
 from data.data_collector import fetch_and_populate_mfapi_data, prefetch_deep_dive_for_user
-from core.portfolio_overlap import fetch_fund_holdings, compute_overlap, _scraper
+from core.portfolio_overlap import compute_overlap
 from core.advanced_analytics import calculate_taxes_and_loads, calculate_goal_strategy, calculate_sip_step_up, run_monte_carlo_simulation, calculate_stress_test, calculate_rebalance, calculate_dividend_cashflow
 
 
@@ -861,32 +861,27 @@ async def get_overlap(request: Request, refresh: bool = False):
             "per_fund": {},
         }
 
-    # Fetch holdings concurrently
+    # Fetch holdings using async Morningstar scraper
+    from scrapers.morningstar import MorningstarScraper as _MS
     raw_holdings_map: dict[str, dict] = {}
-    mstar_id_map: dict[str, str] = {} # fund_name -> mstar_id
+    mstar_id_map: dict[str, str] = {}  # fund_name -> mstar_id
 
-    async def _fetch(h: dict):
-        fn = h["name"]
-        mstar_fund = await asyncio.get_event_loop().run_in_executor(
-            None, _scraper.search_fund, fn
-        )
-        if mstar_fund:
+    async with _MS() as ms:
+        for h in equity_holdings:
+            fn = h["name"]
             try:
-                mid = mstar_fund['id']
-                mstar_id_map[fn] = mid
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, _scraper.get_portfolio, mid
-                )
-                raw_holdings_map[fn] = result
+                mstar_fund = await ms.search_fund(fn)
+                if mstar_fund:
+                    mid = mstar_fund['id']
+                    mstar_id_map[fn] = mid
+                    result = await ms.get_portfolio(mid)
+                    raw_holdings_map[fn] = result
+                else:
+                    raw_holdings_map[fn] = {}
             except Exception as exc:
                 logger.warning("Failed to get portfolio for %s: %s", fn, exc)
                 raw_holdings_map[fn] = {}
-        else:
-            raw_holdings_map[fn] = {}
-
-    for h in equity_holdings:
-        await _fetch(h)
-        await asyncio.sleep(0.3)
+            await asyncio.sleep(0.3)
 
     result = compute_overlap(raw_holdings_map)
 
