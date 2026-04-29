@@ -1219,7 +1219,7 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
         from scrapers.moneycontrol import MoneyControlScraper
         
         async with MoneyControlScraper() as mc, MorningstarScraper() as ms:
-            ms_fund, mc_risk, mc_perf, mc_perf_yearly, mc_perf_sip, mc_fund, mc_overview = await asyncio.gather(
+            results = await asyncio.gather(
                 ms.search_fund(scheme_name),
                 mc.get_risk_metrics(isin),
                 mc.get_performance(isin),
@@ -1227,7 +1227,15 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
                 mc.get_performance_sip(isin),
                 mc.get_fundamentals(isin),
                 mc.get_overview(isin),
+                return_exceptions=True
             )
+        ms_fund = results[0] if not isinstance(results[0], Exception) else None
+        mc_risk = results[1] if not isinstance(results[1], Exception) else None
+        mc_perf = results[2] if not isinstance(results[2], Exception) else None
+        mc_perf_yearly = results[3] if not isinstance(results[3], Exception) else None
+        mc_perf_sip = results[4] if not isinstance(results[4], Exception) else None
+        mc_fund = results[5] if not isinstance(results[5], Exception) else None
+        mc_overview = results[6] if not isinstance(results[6], Exception) else None
         # Merge overview data (AUM, expense, turnover) into mc_fund for _mc_extract_fundamentals
         if mc_overview:
             mc_fund = {**mc_overview, **(mc_fund or {})}
