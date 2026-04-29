@@ -1195,12 +1195,18 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
         from scrapers.moneycontrol import MoneyControlScraper
         try:
             async with MoneyControlScraper() as mc:
-                mc_perf, mc_perf_yearly, mc_perf_sip, mc_overview = await asyncio.gather(
+                results = await asyncio.gather(
                     mc.get_performance(isin),
                     mc.get_performance_yearly(isin),
                     mc.get_performance_sip(isin),
                     mc.get_overview(isin),
+                    return_exceptions=True
                 )
+            mc_perf = results[0] if not isinstance(results[0], Exception) else None
+            mc_perf_yearly = results[1] if not isinstance(results[1], Exception) else None
+            mc_perf_sip = results[2] if not isinstance(results[2], Exception) else None
+            mc_overview = results[3] if not isinstance(results[3], Exception) else None
+            
             if mc_overview and mfapi_data["current_nav"] is None:
                 mfapi_data["current_nav"] = mc_overview.get("latest_nav")
                 mfapi_data["nav_date"] = mc_overview.get("nav_date")
@@ -1387,7 +1393,7 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
         if resolved_scheme_code and resolved_scheme_code != scheme_code:
             scheme_code = resolved_scheme_code
             await asyncio.get_event_loop().run_in_executor(
-                None, _insert_or_update_scheme, isin, scheme_name, scheme.get("category"), scheme.get("benchmark"), str(scheme_code)
+                None, _insert_or_update_scheme, isin, scheme_name, str(scheme_code), scheme.get("category"), scheme.get("benchmark")
             )
 
         if scheme_code:
