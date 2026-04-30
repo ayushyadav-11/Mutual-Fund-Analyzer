@@ -455,13 +455,17 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
     try:
         # 1. Fundamentals
         c.execute('''
-            INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, price_sale, cat_avg_price_sale, price_cash_flow, cat_avg_price_cash_flow, dividend_yield, cat_avg_dividend_yield, roe, cat_avg_roe, last_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, pe, cat_avg_pe, pb, cat_avg_pb, price_sale, cat_avg_price_sale, price_cash_flow, cat_avg_price_cash_flow, dividend_yield, cat_avg_dividend_yield, roe, cat_avg_roe, last_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(isin) DO UPDATE SET
                 aum_cr=excluded.aum_cr,
                 expense_ratio=excluded.expense_ratio,
                 exit_load=excluded.exit_load,
                 portfolio_turnover=excluded.portfolio_turnover,
+                pe=excluded.pe,
+                cat_avg_pe=excluded.cat_avg_pe,
+                pb=excluded.pb,
+                cat_avg_pb=excluded.cat_avg_pb,
                 price_sale=excluded.price_sale,
                 cat_avg_price_sale=excluded.cat_avg_price_sale,
                 price_cash_flow=excluded.price_cash_flow,
@@ -473,6 +477,7 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
                 last_updated_at=excluded.last_updated_at
         ''', (
             isin, fundamentals.get("aum_cr"), fundamentals.get("expense_ratio"), fundamentals.get("exit_load"), fundamentals.get("portfolio_turnover"),
+            fundamentals.get("pe"), fundamentals.get("cat_avg_pe"), fundamentals.get("pb"), fundamentals.get("cat_avg_pb"),
             fundamentals.get("price_sale"), fundamentals.get("cat_avg_price_sale"), fundamentals.get("price_cash_flow"), fundamentals.get("cat_avg_price_cash_flow"),
             fundamentals.get("dividend_yield"), fundamentals.get("cat_avg_dividend_yield"), fundamentals.get("roe"), fundamentals.get("cat_avg_roe"),
             now
