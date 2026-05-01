@@ -27,19 +27,22 @@ if USE_POSTGRES:
             _db_url += "&sslmode=require"
         if "keepalives" not in _db_url:
             _db_url += "&keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5"
-
+    import threading
     _pg_pool = None  # Lazy: initialized on first use
+    _pool_lock = threading.Lock()
 
     def _get_pool() -> ThreadedConnectionPool:
         """Return the global pool, creating it on first call (lazy init)."""
         global _pg_pool
         if _pg_pool is None:
-            try:
-                _pg_pool = ThreadedConnectionPool(1, 10, _db_url)
-                logger.info("Postgres connection pool created.")
-            except Exception as e:
-                logger.error("FATAL: Could not create ThreadedConnectionPool: %s", e)
-                raise
+            with _pool_lock:
+                if _pg_pool is None:
+                    try:
+                        _pg_pool = ThreadedConnectionPool(1, 10, _db_url)
+                        logger.info("Postgres connection pool created.")
+                    except Exception as e:
+                        logger.error("FATAL: Could not create ThreadedConnectionPool: %s", e)
+                        raise
         return _pg_pool
 
     def _get_live_pg_conn():
@@ -99,6 +102,7 @@ class AgnosticConnection:
         self.conn = conn
         self.is_pooled = is_pooled
         self._had_error = False  # flag if this connection saw an OperationalError
+        self._closed = False
         
     def cursor(self):
         c = self.conn.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else self.conn.cursor()
@@ -118,6 +122,10 @@ class AgnosticConnection:
             self._had_error = True
 
     def close(self):
+        if getattr(self, '_closed', False):
+            return
+        self._closed = True
+        
         if self.is_pooled and USE_POSTGRES:
             pool = _get_pool()
             if self._had_error or self.conn.closed:
