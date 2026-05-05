@@ -1783,6 +1783,7 @@ async def get_family_portfolios(request: Request):
             user_info = get_user_by_id(uid)
             total_invested = 0.0
             current_value = 0.0
+            holdings_list = []
             for h in data.get("holdings", []):
                 curr_nav = h.get("live_nav") or h.get("nav")
                 h_txns = h.get("transactions")
@@ -1801,19 +1802,33 @@ async def get_family_portfolios(request: Request):
                 invested = sum(abs(t["amount"]) for t in h_txns if t["type"] in ("BUY", "SIP", "SWITCH_IN", "DIVR")) - sum(abs(t["amount"]) for t in h_txns if t["type"] in ("SELL", "SWITCH_OUT"))
                 total_invested += invested
                 
+                if val > 0:
+                    holdings_list.append({"name": h.get("name") or "Unknown Fund", "value": val})
+                
             investor_name = data.get("investor_info", {}).get("name")
             fallback_name = investor_name if investor_name else "Unknown"
             
             db_username = user_info.get("username") if user_info else None
             if db_username and db_username.startswith("auth_user_"):
                 db_username = None
+                
+            holdings_list.sort(key=lambda x: x["value"], reverse=True)
+            top_holdings = []
+            for th in holdings_list[:5]:
+                alloc_pct = round((th["value"] / current_value * 100), 2) if current_value > 0 else 0
+                top_holdings.append({
+                    "name": th["name"],
+                    "value": round(th["value"], 2),
+                    "allocation": alloc_pct
+                })
             
             portfolios.append({
                 "user_id": uid,
                 "username": db_username if db_username else fallback_name,
                 "total_invested": round(total_invested, 2),
                 "current_value": round(current_value, 2),
-                "xirr": data.get("portfolio_xirr")
+                "xirr": data.get("portfolio_xirr"),
+                "top_holdings": top_holdings
             })
         except Exception:
             pass

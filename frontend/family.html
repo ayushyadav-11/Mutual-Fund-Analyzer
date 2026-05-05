@@ -23,6 +23,26 @@
     .metric { margin-bottom: 10px; display: flex; justify-content: space-between; }
     .metric-label { color: var(--text-muted); font-size: 0.9rem; }
     .metric-value { font-weight: bold; }
+    .metric-value { font-weight: bold; }
+    
+    /* Tabs styling */
+    .tabs { display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 20px; }
+    .tab-btn { background: none; border: none; padding: 12px 20px; color: var(--text-muted); cursor: pointer; font-size: 1rem; font-weight: 500; border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .tab-btn:hover { color: var(--text-main); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    
+    /* Comparison Table Styling */
+    .comparison-table-wrapper { overflow-x: auto; margin-top: 10px; }
+    .comparison-table { width: 100%; border-collapse: collapse; text-align: left; }
+    .comparison-table th, .comparison-table td { padding: 15px; border-bottom: 1px solid var(--border-color); }
+    .comparison-table th { background: var(--bg-card); color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+    .comparison-table td { background: var(--bg-primary); }
+    .top-holding-item { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed var(--border-color); }
+    .top-holding-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .holding-name { font-size: 0.85rem; display: block; color: var(--text-main); }
+    .holding-alloc { font-size: 0.75rem; color: var(--text-muted); }
   </style>
 </head>
 <body>
@@ -46,35 +66,53 @@
         <p style="color:var(--text-secondary);margin-top:10px;">Compare your mutual fund portfolio performance with your family members.</p>
       </div>
 
-      <div class="grid">
-        <!-- Send Invites -->
-        <div class="card" style="padding:24px; position: relative; z-index: 50;">
-          <h3>Add Family Member</h3>
-          <p style="font-size:0.85rem;color:var(--text-muted);margin-top:5px;">Send an invite to their username.</p>
-          <style>
-            .search-item:hover { background: rgba(99,102,241,0.25); color: #fff; }
-          </style>
-          <div class="invite-box" style="position: relative;">
-            <input type="text" id="invite-username" placeholder="Search family member..." oninput="searchUsers(this.value)" autocomplete="off" />
-            <button onclick="sendInvite()">Invite</button>
-            <div id="search-results" style="position: absolute; top: 100%; left: 0; right: 80px; background: rgba(17, 24, 39, 0.98); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; display: none; z-index: 100; max-height: 200px; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.8); backdrop-filter: blur(10px);"></div>
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
+        <button class="tab-btn" onclick="switchTab('comparison')">Comparison View</button>
+      </div>
+
+      <div id="tab-overview" class="tab-pane active">
+        <div class="grid">
+          <!-- Send Invites -->
+          <div class="card" style="padding:24px; position: relative; z-index: 50;">
+            <h3>Add Family Member</h3>
+            <p style="font-size:0.85rem;color:var(--text-muted);margin-top:5px;">Send an invite to their username.</p>
+            <style>
+              .search-item:hover { background: rgba(99,102,241,0.25); color: #fff; }
+            </style>
+            <div class="invite-box" style="position: relative;">
+              <input type="text" id="invite-username" placeholder="Search family member..." oninput="searchUsers(this.value)" autocomplete="off" />
+              <button onclick="sendInvite()">Invite</button>
+              <div id="search-results" style="position: absolute; top: 100%; left: 0; right: 80px; background: rgba(17, 24, 39, 0.98); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; display: none; z-index: 100; max-height: 200px; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.8); backdrop-filter: blur(10px);"></div>
+            </div>
+          </div>
+
+          <!-- Pending Invites -->
+          <div class="card" style="padding:24px;">
+            <h3>Pending Invites</h3>
+            <div class="pending-list" id="pending-list">
+              <div style="color:var(--text-muted); font-size: 0.9rem;">Loading...</div>
+            </div>
           </div>
         </div>
 
-        <!-- Pending Invites -->
-        <div class="card" style="padding:24px;">
-          <h3>Pending Invites</h3>
-          <div class="pending-list" id="pending-list">
-            <div style="color:var(--text-muted); font-size: 0.9rem;">Loading...</div>
+        <!-- Family Portfolios Viewer -->
+        <div class="card" style="padding:24px; margin-top: 20px;">
+          <h3>Family Portfolios Summary</h3>
+          <div class="portfolio-grid" id="portfolio-grid">
+             <div class="spinner" style="margin: 20px auto;"></div>
           </div>
         </div>
       </div>
 
-      <!-- Family Portfolios Viewer -->
-      <div class="card" style="padding:24px;">
-        <h3>Family Portfolios Comparison</h3>
-        <div class="portfolio-grid" id="portfolio-grid">
-           <div class="spinner" style="margin: 20px auto;"></div>
+      <div id="tab-comparison" class="tab-pane">
+        <div class="card" style="padding:24px;">
+          <h3>Detailed Comparison</h3>
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-top:5px;margin-bottom:15px;">Side-by-side comparison of metrics and top holdings.</p>
+          <div class="comparison-table-wrapper" id="comparison-table-container">
+            <div class="spinner" style="margin: 20px auto;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -142,6 +180,13 @@
         }
     });
 
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+        document.querySelector(`.tab-btn[onclick="switchTab('${tabId}')"]`).classList.add('active');
+        document.getElementById(`tab-${tabId}`).classList.add('active');
+    }
+
     async function sendInvite() {
         const username = document.getElementById('invite-username').value.trim();
         if (!username) return;
@@ -188,13 +233,16 @@
         try {
             const ports = await apiFetch('/api/family/portfolios');
             const container = document.getElementById('portfolio-grid');
+            const compContainer = document.getElementById('comparison-table-container');
             const currentUser = localStorage.getItem('mf_username');
             
             if (ports.length === 0) {
                  container.innerHTML = '<div style="color:var(--text-muted);">No portfolio data found. You might need to upload your CAS PDF first.</div>';
+                 compContainer.innerHTML = '<div style="color:var(--text-muted);">No portfolio data found.</div>';
                  return;
             }
 
+            // Render Overview Grid
             container.innerHTML = ports.map(p => {
                 const gain = p.current_value - p.total_invested;
                 const gainPct = p.total_invested > 0 ? (gain / p.total_invested * 100).toFixed(2) : '0.00';
@@ -223,9 +271,65 @@
                     </div>
                 </div>
             `}).join('');
+            
+            // Render Comparison Table
+            let tableHTML = `<table class="comparison-table"><thead><tr><th>Metric</th>`;
+            ports.forEach(p => {
+                const isMe = p.username === currentUser;
+                tableHTML += `<th>${p.username} ${isMe ? '(You)' : ''}</th>`;
+            });
+            tableHTML += `</tr></thead><tbody>`;
+            
+            // Total Invested
+            tableHTML += `<tr><td><strong>Total Invested</strong></td>`;
+            ports.forEach(p => tableHTML += `<td>₹${p.total_invested.toLocaleString('en-IN')}</td>`);
+            tableHTML += `</tr>`;
+            
+            // Current Value
+            tableHTML += `<tr><td><strong>Current Value</strong></td>`;
+            ports.forEach(p => tableHTML += `<td><span class="text-accent">₹${p.current_value.toLocaleString('en-IN')}</span></td>`);
+            tableHTML += `</tr>`;
+            
+            // Absolute Gain
+            tableHTML += `<tr><td><strong>Absolute Gain</strong></td>`;
+            ports.forEach(p => {
+                const gain = p.current_value - p.total_invested;
+                const gainPct = p.total_invested > 0 ? (gain / p.total_invested * 100).toFixed(2) : '0.00';
+                tableHTML += `<td><span class="${gain >= 0 ? 'text-success' : 'text-danger'}">${gain >= 0 ? '+' : ''}${gainPct}%</span></td>`;
+            });
+            tableHTML += `</tr>`;
+            
+            // XIRR
+            tableHTML += `<tr><td><strong>XIRR</strong></td>`;
+            ports.forEach(p => tableHTML += `<td><span class="${p.xirr >= 0 ? 'text-warning' : 'text-danger'}">${p.xirr !== undefined ? p.xirr + '%' : 'N/A'}</span></td>`);
+            tableHTML += `</tr>`;
+            
+            // Top Holdings
+            tableHTML += `<tr><td><strong>Top 5 Holdings</strong></td>`;
+            ports.forEach(p => {
+                tableHTML += `<td style="vertical-align: top;">`;
+                if(p.top_holdings && p.top_holdings.length > 0) {
+                    p.top_holdings.forEach(th => {
+                        tableHTML += `
+                        <div class="top-holding-item">
+                            <span class="holding-name">${th.name}</span>
+                            <span class="holding-alloc">₹${th.value.toLocaleString('en-IN')} (${th.allocation}%)</span>
+                        </div>`;
+                    });
+                } else {
+                    tableHTML += `<span style="color:var(--text-muted); font-size:0.85rem;">No holdings found.</span>`;
+                }
+                tableHTML += `</td>`;
+            });
+            tableHTML += `</tr>`;
+            
+            tableHTML += `</tbody></table>`;
+            compContainer.innerHTML = tableHTML;
+            
         } catch (e) {
              console.error("Error loading portfolios:", e);
              document.getElementById('portfolio-grid').innerHTML = '<div style="color:var(--danger);">Error loading family portfolios.</div>';
+             document.getElementById('comparison-table-container').innerHTML = '<div style="color:var(--danger);">Error loading comparison data.</div>';
         }
     }
 
