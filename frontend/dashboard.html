@@ -67,6 +67,51 @@
                 <button class="tab-btn" data-tab="manage">⚙️ Mgmt & Cashflow</button>
                 <button class="tab-btn" data-tab="transactions">📋 Transactions</button>
                 <button class="tab-btn" data-tab="funds">🔍 Funds</button>
+                <button class="tab-btn" data-tab="compare">⚖️ Compare Funds</button>
+            </div>
+
+            <!-- ═════════════════════════ TAB: COMPARE FUNDS ════════════════════════ -->
+            <div class="tab-panel" id="tab-compare">
+                <div class="card" style="padding:24px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                        <div>
+                            <h2 style="font-size:1.3rem;font-weight:800;margin:0;">⚖️ Compare Mutual Funds</h2>
+                            <p style="color:var(--text-secondary);font-size:0.85rem;margin:4px 0 0;">Select two funds from your portfolio to compare them side-by-side.</p>
+                        </div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                            <select id="compare-fund-1" class="compare-select" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;width:220px;outline:none;" onchange="loadComparison()">
+                                <option value="">Select Fund 1...</option>
+                            </select>
+                            <span style="font-weight:bold;color:var(--text-muted);">VS</span>
+                            <select id="compare-fund-2" class="compare-select" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text-primary);font-size:0.85rem;width:220px;outline:none;" onchange="loadComparison()">
+                                <option value="">Select Fund 2...</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div id="compare-loader" class="empty-state" style="display:none;">
+                        <div class="icon">⏳</div><p>Fetching deep-dive data...</p>
+                    </div>
+                    
+                    <div id="compare-empty" class="empty-state">
+                        <p>Select two funds above to see their detailed comparison.</p>
+                    </div>
+
+                    <div id="compare-content" style="display:none; overflow-x: auto;">
+                        <table class="data-table" style="width:100%; border-collapse: collapse; text-align: left;">
+                            <thead>
+                                <tr style="background: var(--bg-card);">
+                                    <th style="width: 20%;">Metric</th>
+                                    <th id="compare-name-1" style="width: 40%; font-size:1.1rem; color:var(--accent-light);">Fund 1</th>
+                                    <th id="compare-name-2" style="width: 40%; font-size:1.1rem; color:var(--accent-light);">Fund 2</th>
+                                </tr>
+                            </thead>
+                            <tbody id="compare-table-body">
+                                <!-- Data will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- ═════════════════════════ TAB: FUNDS BROWSER ════════════════════════ -->
@@ -2253,6 +2298,116 @@
                 el('fm-name').textContent = 'Error loading fund details';
                 console.error(e);
             } finally {
+                el('fm-loader').style.display = 'none';
+            }
+        }
+        
+        // ══════════════════════════════════════════════════════════════════════════
+        // COMPARE FUNDS LOGIC
+        // ══════════════════════════════════════════════════════════════════════════
+        async function loadComparison() {
+            const isin1 = document.getElementById('compare-fund-1').value;
+            const isin2 = document.getElementById('compare-fund-2').value;
+            
+            if (!isin1 || !isin2) {
+                document.getElementById('compare-content').style.display = 'none';
+                document.getElementById('compare-empty').style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('compare-empty').style.display = 'none';
+            document.getElementById('compare-content').style.display = 'none';
+            document.getElementById('compare-loader').style.display = 'flex';
+            
+            try {
+                // Fetch both funds
+                const [f1, f2] = await Promise.all([
+                    apiFetch(`/api/fund/${isin1}`),
+                    apiFetch(`/api/fund/${isin2}`)
+                ]);
+                
+                document.getElementById('compare-name-1').textContent = f1.fundamentals?.scheme_name || 'Fund 1';
+                document.getElementById('compare-name-2').textContent = f2.fundamentals?.scheme_name || 'Fund 2';
+                
+                let html = '';
+                
+                const addRow = (label, val1, val2, colorize = false, smaller = false) => {
+                    const style = smaller ? 'font-size:0.85rem;' : '';
+                    let c1 = '', c2 = '';
+                    if (colorize) {
+                        const num1 = parseFloat(val1); const num2 = parseFloat(val2);
+                        if (!isNaN(num1) && num1 > 0) c1 = 'color:var(--success);';
+                        else if (!isNaN(num1) && num1 < 0) c1 = 'color:var(--danger);';
+                        if (!isNaN(num2) && num2 > 0) c2 = 'color:var(--success);';
+                        else if (!isNaN(num2) && num2 < 0) c2 = 'color:var(--danger);';
+                    }
+                    html += `<tr>
+                        <td style="font-weight:600;${style}">${label}</td>
+                        <td style="${style}${c1}">${val1 !== undefined && val1 !== null ? val1 : 'N/A'}</td>
+                        <td style="${style}${c2}">${val2 !== undefined && val2 !== null ? val2 : 'N/A'}</td>
+                    </tr>`;
+                };
+                
+                // NAV
+                html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;">NAV & Performance</td></tr>`;
+                addRow('Current NAV', f1.fundamentals?.nav ? '₹' + parseFloat(f1.fundamentals.nav).toFixed(2) : 'N/A', f2.fundamentals?.nav ? '₹' + parseFloat(f2.fundamentals.nav).toFixed(2) : 'N/A');
+                
+                // Returns
+                const p1 = f1.performance_yearly || [];
+                const p2 = f2.performance_yearly || [];
+                const getRet = (arr, ys) => {
+                    const row = arr.find(r => r.years === ys);
+                    return row && row.fundReturn != null ? row.fundReturn + '%' : 'N/A';
+                };
+                addRow('1Y Return', getRet(p1, 1), getRet(p2, 1), true);
+                addRow('3Y Return', getRet(p1, 3), getRet(p2, 3), true);
+                addRow('5Y Return', getRet(p1, 5), getRet(p2, 5), true);
+                
+                // Fundamentals
+                html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:10px;">Fundamentals</td></tr>`;
+                const fund1 = f1.fundamentals || {};
+                const fund2 = f2.fundamentals || {};
+                
+                addRow('Expense Ratio', fund1.expense_ratio ? fund1.expense_ratio + '%' : 'N/A', fund2.expense_ratio ? fund2.expense_ratio + '%' : 'N/A');
+                addRow('AUM (Cr)', fund1.aum_cr ? '₹' + parseFloat(fund1.aum_cr).toLocaleString() : 'N/A', fund2.aum_cr ? '₹' + parseFloat(fund2.aum_cr).toLocaleString() : 'N/A');
+                addRow('PE Ratio', fund1.pe_ratio, fund2.pe_ratio);
+                addRow('PB Ratio', fund1.pb_ratio, fund2.pb_ratio);
+                addRow('Turnover', fund1.portfolio_turnover ? fund1.portfolio_turnover + '%' : 'N/A', fund2.portfolio_turnover ? fund2.portfolio_turnover + '%' : 'N/A');
+                
+                // Top Sectors
+                html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:10px;">Top 5 Sectors</td></tr>`;
+                
+                const s1 = (f1.sector_allocation || []).slice(0, 5);
+                const s2 = (f2.sector_allocation || []).slice(0, 5);
+                
+                let sHtml1 = s1.map(s => `<div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding:4px 0;"><span style="color:var(--text-main);font-size:0.85rem">${s.sector}</span><span style="color:var(--info);font-size:0.85rem">${s.weight.toFixed(1)}%</span></div>`).join('');
+                let sHtml2 = s2.map(s => `<div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding:4px 0;"><span style="color:var(--text-main);font-size:0.85rem">${s.sector}</span><span style="color:var(--info);font-size:0.85rem">${s.weight.toFixed(1)}%</span></div>`).join('');
+                
+                html += `<tr><td></td><td style="vertical-align:top;">${sHtml1 || '<span style="color:var(--text-muted);font-size:0.85rem;">No Data</span>'}</td><td style="vertical-align:top;">${sHtml2 || '<span style="color:var(--text-muted);font-size:0.85rem;">No Data</span>'}</td></tr>`;
+                
+                // Top Holdings
+                html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:10px;">Top 5 Holdings</td></tr>`;
+                
+                const h1 = (f1.holdings || []).slice(0, 5);
+                const h2 = (f2.holdings || []).slice(0, 5);
+                
+                let hHtml1 = h1.map(h => `<div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding:4px 0;"><span style="color:var(--text-main);font-size:0.85rem">${h.asset}</span><span style="color:var(--info);font-size:0.85rem">${h.weight.toFixed(1)}%</span></div>`).join('');
+                let hHtml2 = h2.map(h => `<div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding:4px 0;"><span style="color:var(--text-main);font-size:0.85rem">${h.asset}</span><span style="color:var(--info);font-size:0.85rem">${h.weight.toFixed(1)}%</span></div>`).join('');
+                
+                html += `<tr><td></td><td style="vertical-align:top;">${hHtml1 || '<span style="color:var(--text-muted);font-size:0.85rem;">No Data</span>'}</td><td style="vertical-align:top;">${hHtml2 || '<span style="color:var(--text-muted);font-size:0.85rem;">No Data</span>'}</td></tr>`;
+                
+                document.getElementById('compare-table-body').innerHTML = html;
+                document.getElementById('compare-content').style.display = 'block';
+                
+            } catch(e) {
+                console.error("Comparison fetch failed:", e);
+                document.getElementById('compare-empty').innerHTML = '<p style="color:var(--danger)">Failed to load comparison data. Please try again.</p>';
+                document.getElementById('compare-empty').style.display = 'block';
+            } finally {
+                document.getElementById('compare-loader').style.display = 'none';
+            }
+        }
+
                 // Re-enable refresh button
                 const refreshBtn = el('fm-refresh-btn');
                 const refreshLabel = el('fm-refresh-label');
