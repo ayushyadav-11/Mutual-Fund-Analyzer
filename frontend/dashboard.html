@@ -2376,28 +2376,34 @@
                 addRow('Current NAV', nav1 ? '₹' + parseFloat(nav1).toFixed(2) + (f1.nav_date ? ` <span style="color:var(--text-muted);font-size:0.75rem;">(${f1.nav_date})</span>` : '') : 'N/A',
                                nav2 ? '₹' + parseFloat(nav2).toFixed(2) + (f2.nav_date ? ` <span style="color:var(--text-muted);font-size:0.75rem;">(${f2.nav_date})</span>` : '') : 'N/A');
                 
-                // Returns
-                const p1 = f1.performance_yearly || [];
-                const p2 = f2.performance_yearly || [];
-                const getRet = (arr, ys) => {
-                    const row = arr.find(r => r.years === ys);
-                    return row && row.fundReturn != null ? row.fundReturn + '%' : 'N/A';
+                // Trailing returns — stored in `returns` dict with keys "1Y", "3Y", "5Y", "10Y"
+                const r1 = f1.returns || {};
+                const r2 = f2.returns || {};
+                const fmtRet = (val) => {
+                    if (val === null || val === undefined) return 'N/A';
+                    const n = parseFloat(val);
+                    if (isNaN(n)) return 'N/A';
+                    const col = n >= 0 ? 'var(--success)' : 'var(--danger)';
+                    return `<span style="color:${col};font-weight:600;">${n >= 0 ? '+' : ''}${n.toFixed(2)}%</span>`;
                 };
-                addRow('1Y Return', getRet(p1, 1), getRet(p2, 1), true);
-                addRow('3Y Return', getRet(p1, 3), getRet(p2, 3), true);
-                addRow('5Y Return', getRet(p1, 5), getRet(p2, 5), true);
+                addRow('1Y Return', fmtRet(r1['1Y']), fmtRet(r2['1Y']));
+                addRow('3Y Return (CAGR)', fmtRet(r1['3Y']), fmtRet(r2['3Y']));
+                addRow('5Y Return (CAGR)', fmtRet(r1['5Y']), fmtRet(r2['5Y']));
+                addRow('10Y Return (CAGR)', fmtRet(r1['10Y']), fmtRet(r2['10Y']));
                 
-                // Fundamentals
-                html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:10px;">Fundamentals</td></tr>`;
+                // Fundamentals — expense_ratio, aum_cr, portfolio_turnover are at TOP LEVEL of the response,
+                // NOT inside the fundamentals object. PE/PB are inside fundamentals.
+                html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;padding:12px 15px;">Fundamentals</td></tr>`;
                 const fund1 = f1.fundamentals || {};
                 const fund2 = f2.fundamentals || {};
                 
-                addRow('Expense Ratio', fund1.expense_ratio ? fund1.expense_ratio + '%' : 'N/A', fund2.expense_ratio ? fund2.expense_ratio + '%' : 'N/A');
-                addRow('AUM (Cr)', fund1.aum_cr ? '₹' + parseFloat(fund1.aum_cr).toLocaleString() : 'N/A', fund2.aum_cr ? '₹' + parseFloat(fund2.aum_cr).toLocaleString() : 'N/A');
-                // PE and PB are stored as `pe` and `pb` in the fundamentals object
-                addRow('PE Ratio', fund1.pe ?? fund1.pe_ratio ?? 'N/A', fund2.pe ?? fund2.pe_ratio ?? 'N/A');
-                addRow('PB Ratio', fund1.pb ?? fund1.pb_ratio ?? 'N/A', fund2.pb ?? fund2.pb_ratio ?? 'N/A');
-                addRow('Turnover', fund1.portfolio_turnover ? fund1.portfolio_turnover + '%' : 'N/A', fund2.portfolio_turnover ? fund2.portfolio_turnover + '%' : 'N/A');
+                // Top-level fields
+                addRow('Expense Ratio', f1.expense_ratio != null ? f1.expense_ratio + '%' : (fund1.expense_ratio != null ? fund1.expense_ratio + '%' : 'N/A'), f2.expense_ratio != null ? f2.expense_ratio + '%' : (fund2.expense_ratio != null ? fund2.expense_ratio + '%' : 'N/A'));
+                addRow('AUM (Cr)', f1.aum_cr != null ? '₹' + parseFloat(f1.aum_cr).toLocaleString('en-IN') : 'N/A', f2.aum_cr != null ? '₹' + parseFloat(f2.aum_cr).toLocaleString('en-IN') : 'N/A');
+                addRow('Turnover', f1.portfolio_turnover != null ? f1.portfolio_turnover + '%' : 'N/A', f2.portfolio_turnover != null ? f2.portfolio_turnover + '%' : 'N/A');
+                // PE/PB inside fundamentals object
+                addRow('PE Ratio', fund1.pe ?? 'N/A', fund2.pe ?? 'N/A');
+                addRow('PB Ratio', fund1.pb ?? 'N/A', fund2.pb ?? 'N/A');
                 
                 // Top Sectors
                 html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:10px;">Top 5 Sectors</td></tr>`;
