@@ -1771,7 +1771,7 @@ async def accept_family_invite(request: Request, req: AcceptInviteRequest):
 
 @app.get("/api/family/portfolios")
 async def get_family_portfolios(request: Request):
-    from data.database import get_family_members, get_user_by_id
+    from data.database import get_family_members, get_user_by_id, get_connection
     from core.parser import load_session
     
     user_ids = [request.state.user_id] + get_family_members(request.state.user_id)
@@ -1784,7 +1784,31 @@ async def get_family_portfolios(request: Request):
             total_invested = 0.0
             current_value = 0.0
             holdings_list = []
-            for h in data.get("holdings", []):
+            category_counts = {}
+            total_weighted_expense = 0.0
+            
+            all_holdings = data.get("holdings", [])
+            
+            # Fetch expense ratios from DB for all ISINs in one batch
+            isins = [h.get("isin") for h in all_holdings if h.get("isin")]
+            expense_map = {}
+            try:
+                conn = get_connection()
+                c = conn.cursor()
+                for isin in isins:
+                    c.execute("SELECT data FROM fund_deep_dive WHERE isin = ? ORDER BY cached_at DESC LIMIT 1", (isin,))
+                    row = c.fetchone()
+                    if row:
+                        import json
+                        dd = json.loads(row[0] if isinstance(row[0], str) else row[0])
+                        er = dd.get("fundamentals", {}).get("expense_ratio")
+                        if er is not None:
+                            expense_map[isin] = float(er)
+                conn.close()
+            except Exception:
+                pass
+            
+            for h in all_holdings:
                 curr_nav = h.get("live_nav") or h.get("nav")
                 h_txns = h.get("transactions")
                 if not h_txns:
@@ -1802,9 +1826,34 @@ async def get_family_portfolios(request: Request):
                 invested = sum(abs(t["amount"]) for t in h_txns if t["type"] in ("BUY", "SIP", "SWITCH_IN", "DIVR")) - sum(abs(t["amount"]) for t in h_txns if t["type"] in ("SELL", "SWITCH_OUT"))
                 total_invested += invested
                 
-                if val > 0:
-                    holdings_list.append({"name": h.get("name") or "Unknown Fund", "value": val})
+                # Track category distribution
+                cat = h.get("category", "Unknown")
+                category_counts[cat] = category_counts.get(cat, 0) + (val if val > 0 else 0)
                 
+                if val > 0:
+                    holdings_list.append({"name": h.get("name") or "Unknown Fund", "value": val, "isin": h.get("isin", "")})
+                
+            # Weighted average expense ratio
+            weighted_er_sum = 0.0
+            weighted_er_weight = 0.0
+            for item in holdings_list:
+                er = expense_map.get(item["isin"])
+                if er is not None and current_value > 0:
+                    wt = item["value"] / current_value
+                    weighted_er_sum += er * wt
+                    weighted_er_weight += wt
+            avg_expense_ratio = round(weighted_er_sum, 2) if weighted_er_weight > 0 else None
+            
+            # Equity vs Debt vs Hybrid split
+            equity_keywords = ["equity", "large cap", "mid cap", "small cap", "flexi", "multi cap", "elss", "value", "focused", "contra", "thematic", "sectoral"]
+            debt_keywords = ["debt", "liquid", "money market", "gilt", "duration", "credit", "banking and psu", "corporate bond", "overnight", "ultra short"]
+            equity_val = sum(v for cat, v in category_counts.items() if any(kw in cat.lower() for kw in equity_keywords))
+            debt_val = sum(v for cat, v in category_counts.items() if any(kw in cat.lower() for kw in debt_keywords))
+            hybrid_val = current_value - equity_val - debt_val
+            equity_pct = round(equity_val / current_value * 100, 1) if current_value > 0 else 0
+            debt_pct = round(debt_val / current_value * 100, 1) if current_value > 0 else 0
+            hybrid_pct = max(0, round(100 - equity_pct - debt_pct, 1))
+            
             investor_name = data.get("investor_info", {}).get("name")
             fallback_name = investor_name if investor_name else "Unknown"
             
@@ -1828,6 +1877,11 @@ async def get_family_portfolios(request: Request):
                 "total_invested": round(total_invested, 2),
                 "current_value": round(current_value, 2),
                 "xirr": data.get("portfolio_xirr"),
+                "num_funds": len(all_holdings),
+                "avg_expense_ratio": avg_expense_ratio,
+                "equity_pct": equity_pct,
+                "debt_pct": debt_pct,
+                "hybrid_pct": hybrid_pct,
                 "top_holdings": top_holdings
             })
         except Exception:

@@ -267,53 +267,82 @@
                     </div>
                     <div class="metric" style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
                         <span class="metric-label">XIRR</span>
-                        <span class="metric-value ${p.xirr >= 0 ? 'text-warning' : 'text-danger'}">${p.xirr !== undefined ? p.xirr + '%' : 'N/A'}</span>
+                        <span class="metric-value ${p.xirr >= 0 ? 'text-warning' : 'text-danger'}">${p.xirr !== undefined && p.xirr !== null ? p.xirr + '%' : 'N/A'}</span>
                     </div>
+                    <div class="metric">
+                        <span class="metric-label">No. of Funds</span>
+                        <span class="metric-value">${p.num_funds || '-'}</span>
+                    </div>
+                    <div class="metric" style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                        <span class="metric-label">Equity / Debt / Hybrid</span>
+                        <span class="metric-value" style="font-size:0.85rem;">${p.equity_pct ?? '-'}% / ${p.debt_pct ?? '-'}% / ${p.hybrid_pct ?? '-'}%</span>
+                    </div>
+                    ${ p.avg_expense_ratio !== null && p.avg_expense_ratio !== undefined ? `
+                    <div class="metric">
+                        <span class="metric-label">Avg Expense Ratio</span>
+                        <span class="metric-value">${p.avg_expense_ratio}%</span>
+                    </div>` : '' }
                 </div>
             `}).join('');
             
             // Render Comparison Table
+            const sectionHeader = (label) =>
+                `<tr><td colspan="${ports.length + 1}" style="background:rgba(255,255,255,0.03);color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;padding:12px 15px;">${label}</td></tr>`;
+            const addRow = (label, cells) =>
+                `<tr><td style="font-weight:600;white-space:nowrap;">${label}</td>${cells.join('')}</tr>`;
+            const cell = (content, colorClass = '') =>
+                `<td style="vertical-align:top;" class="${colorClass}">${content !== undefined && content !== null ? content : 'N/A'}</td>`;
+            
             let tableHTML = `<table class="comparison-table"><thead><tr><th>Metric</th>`;
             ports.forEach(p => {
                 const isMe = p.username === currentUser;
-                tableHTML += `<th>${p.username} ${isMe ? '(You)' : ''}</th>`;
+                tableHTML += `<th>${p.username} ${isMe ? '<span style="font-size:0.7rem;padding:1px 5px;background:var(--accent);color:white;border-radius:8px;">You</span>' : ''}</th>`;
             });
             tableHTML += `</tr></thead><tbody>`;
             
-            // Total Invested
-            tableHTML += `<tr><td><strong>Total Invested</strong></td>`;
-            ports.forEach(p => tableHTML += `<td>₹${p.total_invested.toLocaleString('en-IN')}</td>`);
-            tableHTML += `</tr>`;
-            
-            // Current Value
-            tableHTML += `<tr><td><strong>Current Value</strong></td>`;
-            ports.forEach(p => tableHTML += `<td><span class="text-accent">₹${p.current_value.toLocaleString('en-IN')}</span></td>`);
-            tableHTML += `</tr>`;
-            
-            // Absolute Gain
-            tableHTML += `<tr><td><strong>Absolute Gain</strong></td>`;
-            ports.forEach(p => {
+            // ── Performance ────────────────────────────────
+            tableHTML += sectionHeader('📈 Performance');
+            tableHTML += addRow('Total Invested', ports.map(p => cell(`₹${p.total_invested.toLocaleString('en-IN')}`)));
+            tableHTML += addRow('Current Value', ports.map(p => cell(`<span style="color:var(--accent-light);font-weight:600;">₹${p.current_value.toLocaleString('en-IN')}</span>`)));
+            tableHTML += addRow('Total Gain (₹)', ports.map(p => {
+                const gain = p.current_value - p.total_invested;
+                return cell(`<span style="color:${gain >= 0 ? 'var(--success)' : 'var(--danger)'}">${gain >= 0 ? '+' : ''}₹${Math.abs(gain).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>`);
+            }));
+            tableHTML += addRow('Absolute Gain (%)', ports.map(p => {
                 const gain = p.current_value - p.total_invested;
                 const gainPct = p.total_invested > 0 ? (gain / p.total_invested * 100).toFixed(2) : '0.00';
-                tableHTML += `<td><span class="${gain >= 0 ? 'text-success' : 'text-danger'}">${gain >= 0 ? '+' : ''}${gainPct}%</span></td>`;
-            });
-            tableHTML += `</tr>`;
+                return cell(`<span style="color:${gain >= 0 ? 'var(--success)' : 'var(--danger)'}">${gain >= 0 ? '+' : ''}${gainPct}%</span>`);
+            }));
+            tableHTML += addRow('XIRR', ports.map(p => {
+                const x = p.xirr;
+                const c = (x !== undefined && x !== null) ? (x >= 0 ? 'var(--warning)' : 'var(--danger)') : 'var(--text-muted)';
+                return cell(`<span style="color:${c};font-weight:600;">${x !== undefined && x !== null ? x + '%' : 'N/A'}</span>`);
+            }));
             
-            // XIRR
-            tableHTML += `<tr><td><strong>XIRR</strong></td>`;
-            ports.forEach(p => tableHTML += `<td><span class="${p.xirr >= 0 ? 'text-warning' : 'text-danger'}">${p.xirr !== undefined ? p.xirr + '%' : 'N/A'}</span></td>`);
-            tableHTML += `</tr>`;
+            // ── Portfolio Structure ────────────────────────
+            tableHTML += sectionHeader('🏗️ Portfolio Structure');
+            tableHTML += addRow('No. of Funds', ports.map(p => cell(p.num_funds ?? '-')));
+            tableHTML += addRow('Equity / Debt / Hybrid', ports.map(p =>
+                cell(`<div style="font-size:0.85rem;line-height:1.8;">
+                    <span style="color:#6ee7b7;">▰ Equity: ${p.equity_pct ?? '-'}%</span><br>
+                    <span style="color:#93c5fd;">▰ Debt: ${p.debt_pct ?? '-'}%</span><br>
+                    <span style="color:#fcd34d;">▰ Hybrid: ${p.hybrid_pct ?? '-'}%</span>
+                </div>`)
+            ));
+            tableHTML += addRow('Avg Expense Ratio', ports.map(p =>
+                cell(p.avg_expense_ratio !== null && p.avg_expense_ratio !== undefined ? `${p.avg_expense_ratio}%` : 'N/A')
+            ));
             
-            // Top Holdings
-            tableHTML += `<tr><td><strong>Top 5 Holdings</strong></td>`;
+            // ── Top 5 Holdings ─────────────────────────────
+            tableHTML += sectionHeader('💼 Top 5 Holdings (by value)');
+            tableHTML += `<tr><td></td>`;
             ports.forEach(p => {
-                tableHTML += `<td style="vertical-align: top;">`;
+                tableHTML += `<td style="vertical-align:top;padding:12px 15px;">`;
                 if(p.top_holdings && p.top_holdings.length > 0) {
                     p.top_holdings.forEach(th => {
-                        tableHTML += `
-                        <div class="top-holding-item">
+                        tableHTML += `<div class="top-holding-item">
                             <span class="holding-name">${th.name}</span>
-                            <span class="holding-alloc">₹${th.value.toLocaleString('en-IN')} (${th.allocation}%)</span>
+                            <span class="holding-alloc">₹${th.value.toLocaleString('en-IN')} &nbsp;·&nbsp; <strong>${th.allocation}%</strong></span>
                         </div>`;
                     });
                 } else {

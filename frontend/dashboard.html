@@ -2370,7 +2370,11 @@
                 
                 // NAV
                 html += `<tr><td colspan="3" style="background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;">NAV & Performance</td></tr>`;
-                addRow('Current NAV', f1.fundamentals?.nav ? '₹' + parseFloat(f1.fundamentals.nav).toFixed(2) : 'N/A', f2.fundamentals?.nav ? '₹' + parseFloat(f2.fundamentals.nav).toFixed(2) : 'N/A');
+                // NAV lives at top-level current_nav, not inside fundamentals
+                const nav1 = f1.current_nav ?? f1.fundamentals?.nav;
+                const nav2 = f2.current_nav ?? f2.fundamentals?.nav;
+                addRow('Current NAV', nav1 ? '₹' + parseFloat(nav1).toFixed(2) + (f1.nav_date ? ` <span style="color:var(--text-muted);font-size:0.75rem;">(${f1.nav_date})</span>` : '') : 'N/A',
+                               nav2 ? '₹' + parseFloat(nav2).toFixed(2) + (f2.nav_date ? ` <span style="color:var(--text-muted);font-size:0.75rem;">(${f2.nav_date})</span>` : '') : 'N/A');
                 
                 // Returns
                 const p1 = f1.performance_yearly || [];
@@ -2390,8 +2394,9 @@
                 
                 addRow('Expense Ratio', fund1.expense_ratio ? fund1.expense_ratio + '%' : 'N/A', fund2.expense_ratio ? fund2.expense_ratio + '%' : 'N/A');
                 addRow('AUM (Cr)', fund1.aum_cr ? '₹' + parseFloat(fund1.aum_cr).toLocaleString() : 'N/A', fund2.aum_cr ? '₹' + parseFloat(fund2.aum_cr).toLocaleString() : 'N/A');
-                addRow('PE Ratio', fund1.pe_ratio, fund2.pe_ratio);
-                addRow('PB Ratio', fund1.pb_ratio, fund2.pb_ratio);
+                // PE and PB are stored as `pe` and `pb` in the fundamentals object
+                addRow('PE Ratio', fund1.pe ?? fund1.pe_ratio ?? 'N/A', fund2.pe ?? fund2.pe_ratio ?? 'N/A');
+                addRow('PB Ratio', fund1.pb ?? fund1.pb_ratio ?? 'N/A', fund2.pb ?? fund2.pb_ratio ?? 'N/A');
                 addRow('Turnover', fund1.portfolio_turnover ? fund1.portfolio_turnover + '%' : 'N/A', fund2.portfolio_turnover ? fund2.portfolio_turnover + '%' : 'N/A');
                 
                 // Top Sectors
