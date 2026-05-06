@@ -1241,6 +1241,18 @@
 
             // Populate the dedicated Fund Browser tab
             buildFundBrowser(allHoldings);
+            
+            // Populate comparison dropdowns
+            const c1 = document.getElementById('compare-fund-1');
+            const c2 = document.getElementById('compare-fund-2');
+            if (c1 && c2) {
+                let opts = '<option value="">Select a fund...</option>';
+                allHoldings.forEach(h => {
+                    if (h.isin) opts += `<option value="${h.isin}">${h.name}</option>`;
+                });
+                c1.innerHTML = opts;
+                c2.innerHTML = opts;
+            }
         }
 
         function holdingRow(h) {
@@ -2299,6 +2311,14 @@
                 console.error(e);
             } finally {
                 el('fm-loader').style.display = 'none';
+                
+                // Re-enable refresh button
+                const refreshBtn = el('fm-refresh-btn');
+                const refreshLabel = el('fm-refresh-label');
+                const refreshIcon = el('fm-refresh-icon');
+                if (refreshBtn) refreshBtn.disabled = false;
+                if (refreshLabel) refreshLabel.textContent = 'Refresh';
+                if (refreshIcon) refreshIcon.style.transform = 'rotate(0deg)';
             }
         }
         
@@ -2407,17 +2427,6 @@
                 document.getElementById('compare-loader').style.display = 'none';
             }
         }
-
-                // Re-enable refresh button
-                const refreshBtn = el('fm-refresh-btn');
-                const refreshLabel = el('fm-refresh-label');
-                const refreshIcon = el('fm-refresh-icon');
-                if (refreshBtn) refreshBtn.disabled = false;
-                if (refreshLabel) refreshLabel.textContent = 'Refresh';
-                if (refreshIcon) refreshIcon.style.transform = 'rotate(0deg)';
-            }
-        }
-
 
         function switchPerfTab(tab, btn) {
             document.querySelectorAll('.fm-perf-panel').forEach(p => p.style.display = 'none');
