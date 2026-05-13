@@ -22,6 +22,20 @@ import time
 # Ensure repo root is on path so imports work correctly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Pre-import chart/cache helpers at module level to avoid UnboundLocalError
+# when they are referenced inside nested try/except blocks.
+try:
+    from data.database import get_nav_series as _get_nav_series
+    from core.chart_builder import build_nav_growth_chart as _build_nav_growth_chart
+    from data.cache import set_cached as _set_cached
+except Exception as _import_err:
+    _get_nav_series = None
+    _build_nav_growth_chart = None
+    _set_cached = None
+    logging.getLogger("nightly_prefetch").warning(
+        "Chart pre-build helpers could not be imported: %s", _import_err
+    )
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -333,33 +347,34 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
         # ── Pre-build and cache the NAV growth chart ─────────────────────────
         # This avoids rebuilding the chart on every user click.
         # Key: "chart:<isin>"  TTL: 26h (expires just after next nightly run)
-        try:
-            from data.database import get_nav_series
-            from core.chart_builder import build_nav_growth_chart
-            from data.cache import set_cached
-            from core.parser import get_benchmark_ticker
-
-            navs = get_nav_series(isin)
-            if navs:
-                bm_name = (
-                    risk_data.get("benchmark_name")
-                    or get_benchmark_ticker(name, "")
-                )
-                chart = build_nav_growth_chart(
-                    navs=navs,
-                    benchmark_symbol=bm_name,
-                    benchmark_label=bm_name,
-                    months=60,
-                )
-                if chart:
-                    set_cached(f"chart:{isin}", chart, ttl_seconds=26 * 3600)
-                    logger.info(f"[CHART] Cached chart for {isin}: {len(chart.get('labels', []))} months")
+        if _get_nav_series and _build_nav_growth_chart and _set_cached:
+            try:
+                navs = _get_nav_series(isin)
+                if navs:
+                    # Prefer the benchmark name from MC risk data; fall back to
+                    # the scheme's benchmark field stored in the DB.
+                    bm_name = (
+                        risk_data.get("benchmark_name")
+                        or scheme.get("benchmark")
+                        or ""
+                    )
+                    chart = _build_nav_growth_chart(
+                        navs=navs,
+                        benchmark_symbol=bm_name,
+                        benchmark_label=bm_name,
+                        months=60,
+                    )
+                    if chart:
+                        _set_cached(f"chart:{isin}", chart, ttl_seconds=26 * 3600)
+                        logger.info(f"[CHART] Cached chart for {isin}: {len(chart.get('labels', []))} months")
+                    else:
+                        logger.warning(f"[CHART] Chart build returned empty for {isin}")
                 else:
-                    logger.warning(f"[CHART] Chart build returned empty for {isin}")
-            else:
-                logger.warning(f"[CHART] No nav_history rows for {isin} — chart not cached")
-        except Exception as _chart_err:
-            logger.warning(f"[CHART] Pre-build failed for {isin}: {_chart_err}")
+                    logger.warning(f"[CHART] No nav_history rows for {isin} — chart not cached")
+            except Exception as _chart_err:
+                logger.warning(f"[CHART] Pre-build failed for {isin}: {_chart_err}")
+        else:
+            logger.debug(f"[CHART] Skipping chart pre-build for {isin} — helpers not available")
 
         logger.info(f"[OK] [{isin}] {name}")
         return True
