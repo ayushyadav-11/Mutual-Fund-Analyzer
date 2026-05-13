@@ -1183,8 +1183,9 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
             "aum_cr": fundms.get("aum_cr"),
             "expense_ratio": fundms.get("expense_ratio"),
             "exit_load": fundms.get("exit_load"),
-            "current_nav": None,
-            "nav_date": None,
+            # Seed NAV from nightly-cached fundamentals first (set by nightly_prefetch)
+            "current_nav": fundms.get("current_nav"),
+            "nav_date": fundms.get("nav_date"),
         }
         portfolio_turnover = fundms.get("portfolio_turnover")
 
@@ -1207,7 +1208,8 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
             mc_perf_sip = results[2] if not isinstance(results[2], Exception) else None
             mc_overview = results[3] if not isinstance(results[3], Exception) else None
             
-            if mc_overview and mfapi_data["current_nav"] is None:
+            # Use MC overview NAV as fallback if nightly job didn't cache it
+            if mc_overview and not mfapi_data["current_nav"]:
                 mfapi_data["current_nav"] = mc_overview.get("latest_nav")
                 mfapi_data["nav_date"] = mc_overview.get("nav_date")
         except Exception as _perf_err:

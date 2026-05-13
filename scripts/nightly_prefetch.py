@@ -138,6 +138,102 @@ from core.mc_helpers import _mc_extract_period_returns, _mc_extract_risk, _mc_ex
 from core.parser import get_benchmark_ticker
 
 
+async def _fetch_and_store_navs(isin: str, scheme_name: str) -> dict:
+    """
+    Fetch latest NAV + full history from mfapi.in and persist to nav_history.
+    Returns {current_nav, nav_date} or {} on failure.
+    """
+    import httpx as _httpx
+    import urllib.parse as _urlparse
+    from datetime import datetime as _dt
+    from data.database import batch_insert_navs, get_connection
+
+    # Step 1: resolve scheme code from ISIN via search
+    scheme_code = None
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT scheme_code FROM schemes WHERE isin = %s", (isin,))
+        row = c.fetchone()
+        conn.close()
+        if row and row.get("scheme_code"):
+            scheme_code = row["scheme_code"]
+    except Exception:
+        pass
+
+    if not scheme_code:
+        try:
+            query = _urlparse.quote(scheme_name[:60])
+            async with _httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"https://api.mfapi.in/mf/search?q={query}")
+                r.raise_for_status()
+                results = r.json() or []
+                for entry in results:
+                    if isin in (entry.get("isinGrowth"), entry.get("isinDivReinvestment")):
+                        scheme_code = entry.get("schemeCode")
+                        break
+                if not scheme_code and results:
+                    scheme_code = results[0].get("schemeCode")
+        except Exception as e:
+            logger.warning(f"[NAV] Could not resolve scheme code for {isin}: {e}")
+            return {}
+
+    if not scheme_code:
+        logger.warning(f"[NAV] No scheme code found for {isin} ({scheme_name})")
+        return {}
+
+    # Step 2: fetch full NAV history
+    try:
+        async with _httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(f"https://api.mfapi.in/mf/{scheme_code}")
+            r.raise_for_status()
+            nav_data = r.json().get("data", [])
+
+        if not nav_data:
+            return {}
+
+        latest = nav_data[0]
+        current_nav = float(latest["nav"])
+        nav_date_raw = latest["date"]
+
+        # Convert all history DD-MM-YYYY → YYYY-MM-DD and bulk-insert
+        converted = []
+        for pt in nav_data:
+            try:
+                d_str = pt["date"]
+                try:
+                    d_parsed = _dt.strptime(d_str, "%d-%m-%Y")
+                except ValueError:
+                    d_parsed = _dt.strptime(d_str, "%d-%b-%Y")
+                converted.append({"date": d_parsed.strftime("%Y-%m-%d"), "nav": float(pt["nav"])})
+            except Exception:
+                continue
+
+        if converted:
+            converted.sort(key=lambda x: x["date"])
+            batch_insert_navs(isin, converted)
+            logger.info(f"[NAV] Stored {len(converted)} NAV records for {isin}")
+
+        # Also update scheme_code in DB if we resolved it
+        try:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute(
+                "UPDATE schemes SET scheme_code = %s WHERE isin = %s AND scheme_code IS NULL",
+                (str(scheme_code), isin)
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        return {"current_nav": current_nav, "nav_date": nav_date_raw}
+
+    except Exception as e:
+        logger.warning(f"[NAV] mfapi fetch failed for {isin} ({scheme_code}): {e}")
+        return {}
+
+
 async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
     """Scrapes a single fund and persists the result to Supabase. Returns True on success."""
     logger.info(f"[START] [{isin}] {name}")
@@ -213,6 +309,16 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
 
         # Ensure ISIN is in schemes table (foreign key requirement)
         insert_or_update_scheme(isin=isin, scheme_name=name)
+
+        # ── Fetch + store latest NAV history from mfapi ───────────────────────
+        nav_info = await _fetch_and_store_navs(isin, name)
+        if nav_info.get("current_nav"):
+            # Store current_nav in fundamentals so the cached DB path can serve it
+            fundms["current_nav"] = nav_info["current_nav"]
+            fundms["nav_date"] = nav_info.get("nav_date")
+            logger.info(f"[NAV] Latest NAV for {isin}: {nav_info['current_nav']} ({nav_info.get('nav_date')})")
+        else:
+            logger.warning(f"[NAV] Could not get NAV for {isin} — performance chart may be empty")
 
         cache_fund_deep_dive(
             isin=isin,

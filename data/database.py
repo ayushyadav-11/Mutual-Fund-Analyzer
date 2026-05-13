@@ -251,22 +251,31 @@ def initialize_database():
             cat_avg_dividend_yield TEXT,
             roe TEXT,
             cat_avg_roe TEXT,
+            current_nav REAL,
+            nav_date TEXT,
             last_updated_at TIMESTAMP,
             FOREIGN KEY (isin) REFERENCES schemes (isin) ON DELETE CASCADE
         )
     ''')
     
     # Graceful Migration: Use IF NOT EXISTS (Postgres-native) so it never aborts the transaction
-    for col in ["pe", "cat_avg_pe", "pb", "cat_avg_pb", "price_sale", "cat_avg_price_sale", "price_cash_flow", "cat_avg_price_cash_flow", "dividend_yield", "cat_avg_dividend_yield", "roe", "cat_avg_roe"]:
+    for col_def in [
+        ("pe", "TEXT"), ("cat_avg_pe", "TEXT"), ("pb", "TEXT"), ("cat_avg_pb", "TEXT"),
+        ("price_sale", "TEXT"), ("cat_avg_price_sale", "TEXT"),
+        ("price_cash_flow", "TEXT"), ("cat_avg_price_cash_flow", "TEXT"),
+        ("dividend_yield", "TEXT"), ("cat_avg_dividend_yield", "TEXT"),
+        ("roe", "TEXT"), ("cat_avg_roe", "TEXT"),
+        ("current_nav", "REAL"), ("nav_date", "TEXT"),
+    ]:
+        col, col_type = col_def
         try:
-            cursor.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN IF NOT EXISTS {col} TEXT")
+            cursor.execute(f"ALTER TABLE fund_fundamentals ADD COLUMN IF NOT EXISTS {col} {col_type}")
             conn.commit()
         except Exception:
             try:
                 conn.rollback()
             except Exception:
                 pass
-            pass
     
     # Fund Risk
     cursor.execute('''
@@ -463,8 +472,8 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
     try:
         # 1. Fundamentals
         c.execute('''
-            INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, pe, cat_avg_pe, pb, cat_avg_pb, price_sale, cat_avg_price_sale, price_cash_flow, cat_avg_price_cash_flow, dividend_yield, cat_avg_dividend_yield, roe, cat_avg_roe, last_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO fund_fundamentals (isin, aum_cr, expense_ratio, exit_load, portfolio_turnover, pe, cat_avg_pe, pb, cat_avg_pb, price_sale, cat_avg_price_sale, price_cash_flow, cat_avg_price_cash_flow, dividend_yield, cat_avg_dividend_yield, roe, cat_avg_roe, current_nav, nav_date, last_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(isin) DO UPDATE SET
                 aum_cr=excluded.aum_cr,
                 expense_ratio=excluded.expense_ratio,
@@ -482,12 +491,15 @@ def cache_fund_deep_dive(isin: str, fundamentals: dict, risk: dict, returns: dic
                 cat_avg_dividend_yield=excluded.cat_avg_dividend_yield,
                 roe=excluded.roe,
                 cat_avg_roe=excluded.cat_avg_roe,
+                current_nav=COALESCE(excluded.current_nav, fund_fundamentals.current_nav),
+                nav_date=COALESCE(excluded.nav_date, fund_fundamentals.nav_date),
                 last_updated_at=excluded.last_updated_at
         ''', (
             isin, fundamentals.get("aum_cr"), fundamentals.get("expense_ratio"), fundamentals.get("exit_load"), fundamentals.get("portfolio_turnover"),
             fundamentals.get("pe"), fundamentals.get("cat_avg_pe"), fundamentals.get("pb"), fundamentals.get("cat_avg_pb"),
             fundamentals.get("price_sale"), fundamentals.get("cat_avg_price_sale"), fundamentals.get("price_cash_flow"), fundamentals.get("cat_avg_price_cash_flow"),
             fundamentals.get("dividend_yield"), fundamentals.get("cat_avg_dividend_yield"), fundamentals.get("roe"), fundamentals.get("cat_avg_roe"),
+            fundamentals.get("current_nav"), fundamentals.get("nav_date"),
             now
         ))
         
