@@ -153,7 +153,7 @@ async def _fetch_and_store_navs(isin: str, scheme_name: str) -> dict:
     try:
         conn = get_connection()
         c = conn.cursor()
-        c.execute("SELECT scheme_code FROM schemes WHERE isin = %s", (isin,))
+        c.execute("SELECT scheme_code FROM schemes WHERE isin = ?", (isin,))
         row = c.fetchone()
         conn.close()
         if row and row.get("scheme_code"):
@@ -219,7 +219,7 @@ async def _fetch_and_store_navs(isin: str, scheme_name: str) -> dict:
             conn = get_connection()
             c = conn.cursor()
             c.execute(
-                "UPDATE schemes SET scheme_code = %s WHERE isin = %s AND scheme_code IS NULL",
+                "UPDATE schemes SET scheme_code = ? WHERE isin = ? AND scheme_code IS NULL",
                 (str(scheme_code), isin)
             )
             conn.commit()

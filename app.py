@@ -1584,17 +1584,81 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
         "returns":            returns_data,
         "fund_trailing":      returns_data,
         "benchmark_cagr":     benchmark_returns,
-        "performance_annualised": (
-            (mc_perf[0].get("lumpsum", {}).get("annualised", []) if isinstance(mc_perf, list) and mc_perf else [])
-            if mc_perf else []
-        ),
-        "performance_yearly":     mc_perf_yearly if mc_perf_yearly else [],
+    }
+
+    # ── Build performance_annualised robustly from mc_perf ────────────────────
+    # mc_perf can be: a list [{lumpsum:{annualised:[...]}}], a dict, or None/{}
+    def _extract_mc_annualised(mc_perf_raw):
+        if isinstance(mc_perf_raw, list) and mc_perf_raw:
+            return mc_perf_raw[0].get("lumpsum", {}).get("annualised", [])
+        if isinstance(mc_perf_raw, dict) and mc_perf_raw:
+            # dict form: try direct annualised key
+            ls = mc_perf_raw.get("lumpsum", {})
+            if ls:
+                return ls.get("annualised", [])
+            return mc_perf_raw.get("annualised", [])
+        return []
+
+    perf_annualised = _extract_mc_annualised(mc_perf)
+
+    # ── DB fallback: synthesize lumpsum rows from returns_data (1Y/3Y/5Y CAGR) ─
+    # This ensures the Lumpsum tab always has data even when MC API is cold/down.
+    if not perf_annualised and returns_data:
+        _PERIOD_MAP = {"1Y": "1 Year", "3Y": "3 Years", "5Y": "5 Years", "10Y": "10 Years"}
+        _bm = benchmark_returns or {}
+        perf_annualised = [
+            {
+                "periodInvested": _PERIOD_MAP.get(period, period),
+                "returns":        round(val, 2) if val is not None else None,
+                "catAvg":         None,
+                "rankInCat":      None,
+                "schemeCount":    None,
+                "_source":        "db_cache",
+            }
+            for period, val in returns_data.items()
+            if val is not None and period in _PERIOD_MAP
+        ]
+        # Sort by period length
+        _order = {"1 Year": 1, "3 Years": 3, "5 Years": 5, "10 Years": 10}
+        perf_annualised.sort(key=lambda r: _order.get(r["periodInvested"], 99))
+
+    # ── DB fallback for yearly performance ────────────────────────────────────
+    perf_yearly = mc_perf_yearly if mc_perf_yearly else []
+    if not perf_yearly:
+        # Try reading yearly from the DB fund_performance table (period stored as "2024", "2023", etc.)
+        try:
+            from data.database import get_connection as _gc
+            _conn = _gc()
+            _c = _conn.cursor()
+            _c.execute(
+                "SELECT period, fund_return, benchmark_return FROM fund_performance WHERE isin = ? ORDER BY period DESC",
+                (isin,)
+            )
+            for _pr in _c.fetchall():
+                _p = _pr["period"]
+                # Only include calendar-year rows (4-digit year strings)
+                if _p and len(str(_p)) == 4 and str(_p).isdigit():
+                    perf_yearly.append({
+                        "years": str(_p),
+                        "periodType": "YEARLY",
+                        "schemeReturn": str(round(_pr["fund_return"], 2)) if _pr["fund_return"] is not None else None,
+                        "catAvg": None,
+                        "rank": None,
+                        "schemeCount": None,
+                    })
+            _conn.close()
+        except Exception as _ye:
+            logger.debug("DB yearly fallback failed for %s: %s", isin, _ye)
+
+    response_payload.update({
+        "performance_annualised": perf_annualised,
+        "performance_yearly":     perf_yearly,
         "performance_sip":        mc_perf_sip if mc_perf_sip else [],
         "sector_allocation":  sector_allocation,
         "holdings":           sorted_holdings,
         "sip_vs_benchmark":   sip_chart,
         "xirr":               holding_xirr,
-    }
+    })
 
     # Cache the full response in Redis (1h TTL) — skip if user-specific fields present
     if not DEBUG_BYPASS_DEEP_DIVE_CACHE:
