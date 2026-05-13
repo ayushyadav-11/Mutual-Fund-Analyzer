@@ -329,6 +329,38 @@ async def _scrape_and_cache_fund(isin: str, name: str, loop) -> bool:
             holdings=sorted_holdings,
             sectors=sector_allocation,
         )
+
+        # ── Pre-build and cache the NAV growth chart ─────────────────────────
+        # This avoids rebuilding the chart on every user click.
+        # Key: "chart:<isin>"  TTL: 26h (expires just after next nightly run)
+        try:
+            from data.database import get_nav_series
+            from core.chart_builder import build_nav_growth_chart
+            from data.cache import set_cached
+            from core.parser import get_benchmark_ticker
+
+            navs = get_nav_series(isin)
+            if navs:
+                bm_name = (
+                    risk_data.get("benchmark_name")
+                    or get_benchmark_ticker(name, "")
+                )
+                chart = build_nav_growth_chart(
+                    navs=navs,
+                    benchmark_symbol=bm_name,
+                    benchmark_label=bm_name,
+                    months=60,
+                )
+                if chart:
+                    set_cached(f"chart:{isin}", chart, ttl_seconds=26 * 3600)
+                    logger.info(f"[CHART] Cached chart for {isin}: {len(chart.get('labels', []))} months")
+                else:
+                    logger.warning(f"[CHART] Chart build returned empty for {isin}")
+            else:
+                logger.warning(f"[CHART] No nav_history rows for {isin} — chart not cached")
+        except Exception as _chart_err:
+            logger.warning(f"[CHART] Pre-build failed for {isin}: {_chart_err}")
+
         logger.info(f"[OK] [{isin}] {name}")
         return True
 
