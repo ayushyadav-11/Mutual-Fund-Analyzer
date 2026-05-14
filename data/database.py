@@ -425,30 +425,69 @@ def insert_or_update_scheme(isin: str, scheme_name: str, scheme_code: Optional[s
     conn.commit()
     conn.close()
 
+def get_latest_nav_date(isin: str) -> str | None:
+    """Returns the most recent nav_date string ('YYYY-MM-DD') stored for this ISIN, or None."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT MAX(nav_date) AS latest FROM nav_history WHERE isin = ?", (isin,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        v = row["latest"] if isinstance(row, dict) else row[0]
+        return str(v) if v else None
+    return None
+
+
 def batch_insert_navs(isin: str, nav_records: List[Dict[str, float]]):
     """
     Ingest heavy chunks of chronological NAV data.
     nav_records format: [{'date': 'YYYY-MM-DD', 'nav': 14.5}, ...]
+
+    Uses psycopg2.extras.execute_values for Postgres (single-round-trip bulk INSERT)
+    and executemany for SQLite. Both are ~100x faster than row-by-row inserts.
     """
     if not nav_records:
         return
-        
-    conn = get_connection()
-    c = conn.cursor()
-    
-    # We use INSERT OR IGNORE because historical NAVs never change
+
     data_tuples = [(isin, r['date'], float(r['nav'])) for r in nav_records]
-    
-    c.executemany('''
-        INSERT OR IGNORE INTO nav_history (isin, nav_date, nav)
-        VALUES (?, ?, ?)
-    ''', data_tuples)
-    
-    # Update the last_updated timestamp
-    c.execute("UPDATE schemes SET last_updated = ? WHERE isin = ?", (datetime.now().isoformat(), isin))
-    
-    conn.commit()
-    conn.close()
+
+    conn = get_connection()
+    try:
+        raw_conn = conn.conn  # unwrap AgnosticConnection → raw psycopg2/sqlite3 conn
+        if USE_POSTGRES:
+            from psycopg2.extras import execute_values
+            with raw_conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO nav_history (isin, nav_date, nav)
+                    VALUES %s
+                    ON CONFLICT (isin, nav_date) DO NOTHING
+                    """,
+                    data_tuples,
+                    page_size=500,
+                )
+            # Update last_updated timestamp on the scheme row
+            with raw_conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE schemes SET last_updated = %s WHERE isin = %s",
+                    (datetime.now().isoformat(), isin),
+                )
+            raw_conn.commit()
+        else:
+            # SQLite path — executemany is fine for smaller datasets
+            c = conn.cursor()
+            c.executemany(
+                "INSERT OR IGNORE INTO nav_history (isin, nav_date, nav) VALUES (?, ?, ?)",
+                data_tuples,
+            )
+            c.execute(
+                "UPDATE schemes SET last_updated = ? WHERE isin = ?",
+                (datetime.now().isoformat(), isin),
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
 def get_nav_series(isin: str) -> List[Dict]:
     """Retrieves identical JSON serializable NAV series from the SQL layer."""

@@ -196,7 +196,13 @@ async def _fetch_and_store_navs(isin: str, scheme_name: str) -> dict:
         logger.warning(f"[NAV] No scheme code found for {isin} ({scheme_name})")
         return {}
 
-    # Step 2: fetch full NAV history
+    # Step 2: fetch full NAV history (or delta if we already have records)
+    try:
+        from data.database import get_latest_nav_date
+        latest_in_db = get_latest_nav_date(isin)  # e.g. "2025-05-13" or None
+    except Exception:
+        latest_in_db = None
+
     try:
         async with _httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(f"https://api.mfapi.in/mf/{scheme_code}")
@@ -210,7 +216,7 @@ async def _fetch_and_store_navs(isin: str, scheme_name: str) -> dict:
         current_nav = float(latest["nav"])
         nav_date_raw = latest["date"]
 
-        # Convert all history DD-MM-YYYY → YYYY-MM-DD and bulk-insert
+        # Convert dates and filter to only NEW records (delta)
         converted = []
         for pt in nav_data:
             try:
@@ -219,14 +225,37 @@ async def _fetch_and_store_navs(isin: str, scheme_name: str) -> dict:
                     d_parsed = _dt.strptime(d_str, "%d-%m-%Y")
                 except ValueError:
                     d_parsed = _dt.strptime(d_str, "%d-%b-%Y")
-                converted.append({"date": d_parsed.strftime("%Y-%m-%d"), "nav": float(pt["nav"])})
+                iso_date = d_parsed.strftime("%Y-%m-%d")
+                # Skip records already in the database
+                if latest_in_db and iso_date <= latest_in_db:
+                    continue
+                converted.append({"date": iso_date, "nav": float(pt["nav"])})
             except Exception:
                 continue
 
         if converted:
             converted.sort(key=lambda x: x["date"])
             batch_insert_navs(isin, converted)
-            logger.info(f"[NAV] Stored {len(converted)} NAV records for {isin}")
+            logger.info(f"[NAV] Stored {len(converted)} new NAV records for {isin} (latest in DB was: {latest_in_db})")
+        elif latest_in_db:
+            logger.info(f"[NAV] Already up-to-date for {isin} (latest: {latest_in_db}), no new records")
+        else:
+            # First-time full load — insert everything
+            all_converted = []
+            for pt in nav_data:
+                try:
+                    d_str = pt["date"]
+                    try:
+                        d_parsed = _dt.strptime(d_str, "%d-%m-%Y")
+                    except ValueError:
+                        d_parsed = _dt.strptime(d_str, "%d-%b-%Y")
+                    all_converted.append({"date": d_parsed.strftime("%Y-%m-%d"), "nav": float(pt["nav"])})
+                except Exception:
+                    continue
+            if all_converted:
+                all_converted.sort(key=lambda x: x["date"])
+                batch_insert_navs(isin, all_converted)
+                logger.info(f"[NAV] Stored {len(all_converted)} NAV records (first load) for {isin}")
 
         # Also update scheme_code in DB if we resolved it
         try:
