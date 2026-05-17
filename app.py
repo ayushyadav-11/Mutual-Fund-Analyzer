@@ -1356,8 +1356,16 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
     if navs:
         latest_nav = navs[-1]
         try:
-            mfapi_data["current_nav"] = float(latest_nav["nav"])
-            mfapi_data["nav_date"] = latest_nav["date"]
+            _nav_val = float(latest_nav["nav"])
+            # Convert datetime.date → ISO string for JSON serialization
+            _nav_date = latest_nav["date"]
+            if hasattr(_nav_date, "isoformat"):
+                _nav_date = _nav_date.isoformat()
+            else:
+                _nav_date = str(_nav_date)
+            # Always prefer DB-sourced NAV — it's from the nightly job
+            mfapi_data["current_nav"] = _nav_val
+            mfapi_data["nav_date"] = _nav_date
         except (TypeError, ValueError, KeyError):
             pass
 
@@ -1410,8 +1418,11 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
             detail = await _fetch_nav(scheme_code)
             nav_data = detail.get("data", [])
             if nav_data:
-                mfapi_data["current_nav"] = float(nav_data[0]["nav"])
-                mfapi_data["nav_date"] = nav_data[0]["date"]
+                # Only update if we don't already have a fresh value from DB
+                _live_nav = float(nav_data[0]["nav"])
+                if not mfapi_data.get("current_nav"):
+                    mfapi_data["current_nav"] = _live_nav
+                    mfapi_data["nav_date"] = nav_data[0]["date"]
                 # Convert mfapi date format (DD-MM-YYYY) → YYYY-MM-DD and store + expose for chart
                 from datetime import datetime as _dt
                 from data.database import batch_insert_navs as _batch_insert_navs
@@ -1435,7 +1446,7 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
                         )
                     except Exception as _bi_err:
                         logger.warning("batch_insert_navs failed for %s: %s", isin, _bi_err)
-                    # Override navs so chart uses fresh data even on first view
+                    # Refresh navs so chart uses fresh data even on first view
                     navs = sorted(converted, key=lambda x: x["date"])
     except Exception as _nav_err:
         import logging as _log
@@ -1449,6 +1460,15 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
         from data.cache import get_cached as _get_cached, set_cached as _set_cached
         from datetime import datetime as _dt, date, timedelta
 
+        # Re-fetch navs from DB if empty (the cached-fund path doesn't call mfapi)
+        if not navs:
+            navs = await asyncio.get_event_loop().run_in_executor(None, get_nav_series, isin)
+            # Normalize datetime.date → ISO string so str()[:7] slicing works
+            navs = [
+                {"date": (r["date"].isoformat() if hasattr(r["date"], "isoformat") else str(r["date"])), "nav": r["nav"]}
+                for r in navs
+            ]
+
         # ── A. Check nightly pre-built chart cache (key: "chart:<isin>") ─────
         _cached_chart = _get_cached(f"chart:{isin}")
         if _cached_chart:
@@ -1457,16 +1477,17 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
         else:
             # ── B. Fall back to on-demand build ──────────────────────────────
             holding = next((h for h in session_data.get("holdings", []) if h.get("isin") == isin), None) if session_data else None
-            benchmark_label = risk_data.get("benchmark_name") or fallback_benchmark
+            benchmark_label = risk_data.get("benchmark_name") or readable_benchmark or ""
 
             if not navs:
                 raise ValueError("No NAV data available; skipping chart")
 
-            # Monthly NAV dict
+            # Monthly NAV dict — normalize date keys to "YYYY-MM" strings
             monthly_nav_dict = {}
-            for row in sorted(navs, key=lambda x: x["date"]):
+            for row in sorted(navs, key=lambda x: str(x["date"])):
                 try:
-                    ym = str(row["date"])[:7]
+                    _d = row["date"]
+                    ym = _d[:7] if isinstance(_d, str) else _d.strftime("%Y-%m")
                     monthly_nav_dict[ym] = float(row["nav"])
                 except Exception:
                     continue
@@ -1474,7 +1495,7 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
             if not monthly_nav_dict:
                 raise ValueError("Monthly NAV series is empty")
 
-            # Benchmark
+            # Benchmark — attempt fetch; gracefully skip if it fails
             bench_s = None
             bench_monthly_dict = None
             if benchmark_symbol:
@@ -1500,7 +1521,9 @@ async def get_fund_details(request: Request, isin: str, refresh: bool = False):
                     else:
                         _chart_logger.warning("Benchmark %s returned None for %s", benchmark_symbol, isin)
                 except Exception as _be:
-                    _chart_logger.warning("Benchmark fetch failed for %s / %s: %s", isin, benchmark_symbol, _be)
+                    _chart_logger.warning("Benchmark fetch failed for %s / %s: %s — rendering fund-only chart", isin, benchmark_symbol, _be)
+                    bench_s = None
+                    bench_monthly_dict = None
 
             # SIP transactions
             sip_txns = []
