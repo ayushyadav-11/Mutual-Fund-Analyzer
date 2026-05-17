@@ -2310,7 +2310,8 @@
                 el('fm-name').textContent = 'Error loading fund details';
                 console.error(e);
             } finally {
-                el('fm-loader').style.display = 'none';
+                const loader = el('fm-loader');
+                if (loader) loader.style.display = 'none';
                 
                 // Re-enable refresh button
                 const refreshBtn = el('fm-refresh-btn');
